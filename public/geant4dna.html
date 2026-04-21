@@ -1,0 +1,3797 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WebGPU Geant4-DNA — CSDA Validation</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@400;600&display=swap');
+  :root{--bg:#0a0a0f;--sf:#12121a;--s2:#1a1a26;--bd:#2a2a3a;--tx:#e8e8f0;--dm:#8888a0;--ac:#00d4aa;--bad:#f44;--ok:#4f4;--mn:'JetBrains Mono',monospace;--sn:'Space Grotesk',system-ui,sans-serif}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--tx);font-family:var(--sn);padding:20px;max-width:1100px;margin:0 auto}
+  h1{font-size:18px;font-weight:600;margin-bottom:4px}
+  h1 span{color:var(--ac);font-family:var(--mn);font-size:12px;margin-left:8px;font-weight:400}
+  p.sub{font-size:11px;color:var(--dm);margin-bottom:16px}
+  .btn{background:var(--ac);color:var(--bg);border:none;padding:8px 16px;border-radius:4px;font-family:var(--mn);font-size:11px;font-weight:600;cursor:pointer;margin-right:8px}
+  .btn:disabled{opacity:0.4;cursor:not-allowed}
+  .btn.bs{background:var(--s2);color:var(--tx);border:1px solid var(--bd)}
+  .controls{margin-bottom:16px;padding:10px;background:var(--sf);border:1px solid var(--bd);border-radius:4px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .controls label{font-size:10px;font-family:var(--mn);color:var(--dm)}
+  .controls input[type=number]{background:var(--s2);color:var(--tx);border:1px solid var(--bd);padding:4px 6px;font-family:var(--mn);font-size:10px;width:80px;border-radius:3px}
+  table{width:100%;border-collapse:collapse;font-family:var(--mn);font-size:10px;margin-top:12px}
+  th,td{text-align:right;padding:6px 8px;border-bottom:1px solid var(--bd)}
+  th{color:var(--dm);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;font-size:9px;background:var(--sf)}
+  td:first-child,th:first-child{text-align:left}
+  .ok{color:var(--ok)}.bad{color:var(--bad)}.meh{color:#fa0}
+  .log{background:var(--sf);border:1px solid var(--bd);border-radius:4px;padding:10px;font-family:var(--mn);font-size:9px;color:var(--dm);max-height:240px;overflow-y:auto;line-height:1.4;margin-top:16px}
+  .log .ok{color:var(--ac)}.log .err{color:var(--bad)}.log .data{color:#8ac}
+  .nw{display:none;color:var(--bad);padding:20px;text-align:center}
+  .nw.show{display:block}
+  .note{font-size:10px;color:var(--dm);margin-top:12px;line-height:1.5}
+  .note code{background:var(--s2);padding:1px 4px;border-radius:2px;color:var(--tx);font-family:var(--mn)}
+</style>
+</head>
+<body>
+<h1>WebGPU Geant4-DNA <span>CSDA validation harness</span></h1>
+<p class="sub">Runs mono-energetic primary electrons in bulk water (30 μm cube), measures total path length and stopping power, compares to NIST ESTAR reference. No chemistry, no DNA, no secondaries — this is the Stage 1 baseline.</p>
+
+<div class="nw" id="nw">WebGPU not available in this browser.</div>
+
+<div class="controls">
+  <button class="btn" id="run">Run validation</button>
+  <button class="btn bs" id="reset">Reset</button>
+  <label>N/energy <input type="number" id="np" value="4096" min="1024" max="32768" step="1024"></label>
+  <label>Box (nm) <input type="number" id="box" value="15000" min="1000" max="50000" step="1000"></label>
+  <label>Cutoff (eV) <input type="number" id="cut" value="7.4" min="1" max="100" step="0.1"></label>
+</div>
+
+<table id="results">
+  <thead>
+    <tr>
+      <th>Energy</th>
+      <th>Therm</th>
+      <th>Esc</th>
+      <th>CSDA Total (nm)</th>
+      <th>ESTAR CSDA</th>
+      <th>Ratio</th>
+      <th>Prod (nm)</th>
+      <th>dE/dx (eV/nm)</th>
+      <th>ESTAR SP</th>
+      <th>Ratio</th>
+      <th>Ions/pri</th>
+      <th>Sec/pri</th>
+      <th>E cons</th>
+      <th>G(OH)</th>
+      <th>G(e⁻aq)</th>
+      <th>G(H)</th>
+      <th>SSB dir</th>
+      <th>SSB ind</th>
+      <th>DSB</th>
+      <th>DSB/Gy/Gbp</th>
+      <th>Total ms</th>
+    </tr>
+  </thead>
+  <tbody id="tb"></tbody>
+</table>
+
+<div class="note">
+  ESTAR reference: NIST Physical Reference Data, liquid water (ρ=1 g/cm³). Geant4-DNA's Emfietzoglou model is known to deviate from ESTAR at E &lt; 1 keV (Emfietzoglou is tuned for liquid water, ESTAR is vapor-based Bethe-Bloch). A ratio of 1.0±0.1 above 3 keV is "passing". Below 1 keV, agreement within ~2× is expected — real validation should compare to Geant4-DNA output directly.
+</div>
+
+<div style="display:flex;gap:12px;margin-top:16px;flex-wrap:wrap">
+  <div>
+    <canvas id="dose_xy" width="256" height="256" style="border:1px solid var(--bd);background:#000;image-rendering:pixelated"></canvas>
+    <div style="font-family:var(--mn);font-size:9px;color:var(--dm);text-align:center;margin-top:4px">
+      Dose projection (XY, sum over Z) &mdash; log colormap, 10 keV primaries
+    </div>
+  </div>
+  <div>
+    <canvas id="dose_yz" width="256" height="256" style="border:1px solid var(--bd);background:#000;image-rendering:pixelated"></canvas>
+    <div style="font-family:var(--mn);font-size:9px;color:var(--dm);text-align:center;margin-top:4px">
+      Dose projection (YZ, sum over X) &mdash; primary track direction
+    </div>
+  </div>
+</div>
+
+<div class="log" id="log"></div>
+
+<script>
+// ===========================================================================
+// PHYSICS SHADER — primary electron tracker with per-particle stats output
+// ===========================================================================
+// ===========================================================================
+// SHARED WGSL HELPERS — prepended to both primary (SHADER) and secondary
+// (SEC_SHADER) pipelines after cross_sections.wgsl. Contains the scalar
+// constants, all physics helper functions, and the RNG primitives.
+// ===========================================================================
+const HELPERS=`
+const PI=3.14159265;
+const NW=33.4;  // molecules/nm³ in liquid water
+
+// Cross sections (XE, XI, XC, XL, XSF*, XAE, XAC, XWE, XWS*) plus
+// their log-space indexing constants (LOG_XE0, INV_LOG_XE_STEP, ...)
+// are prepended to this shader at load time by fetching
+// /cross_sections.wgsl (generated by src/convert_g4data.py).
+// DO NOT inline them here — edit the converter instead.
+
+// Shell binding energies (eV) — G4DNAWaterIonisationStructure
+const SB=array<f32,5>(10.79,13.39,16.05,32.30,539.0);
+// Excitation energies (eV) — G4DNAEmfietzoglouWaterExcitationStructure
+const EX=array<f32,5>(8.22,10.00,11.24,12.61,13.77);
+
+fn xs_all(E:f32)->vec3<f32>{
+  if(E<=XE[0]){return vec3<f32>(0.0,0.0,XL[0]);}
+  if(E>=XE[XN-1u]){return vec3<f32>(XI[XN-1u],XC[XN-1u],XL[XN-1u]);}
+  let t=(log(E)-LOG_XE0)*INV_LOG_XE_STEP;
+  let i=u32(clamp(floor(t),0.0,f32(XN-2u)));
+  let f=t-f32(i);
+  let j=i+1u;
+  return vec3<f32>(
+    max(0.0,XI[i]+(XI[j]-XI[i])*f),
+    max(0.0,XC[i]+(XC[j]-XC[i])*f),
+    max(0.0,XL[i]+(XL[j]-XL[i])*f)
+  );
+}
+
+fn xs_shell_fracs(E:f32)->array<f32,5>{
+  if(E<=XE[0]){return array<f32,5>(XSF0[0],XSF1[0],XSF2[0],XSF3[0],XSF4[0]);}
+  if(E>=XE[XN-1u]){return array<f32,5>(XSF0[XN-1u],XSF1[XN-1u],XSF2[XN-1u],XSF3[XN-1u],XSF4[XN-1u]);}
+  let t=(log(E)-LOG_XE0)*INV_LOG_XE_STEP;
+  let i=u32(clamp(floor(t),0.0,f32(XN-2u)));
+  let f=t-f32(i);
+  let j=i+1u;
+  return array<f32,5>(
+    max(0.0,XSF0[i]+(XSF0[j]-XSF0[i])*f),
+    max(0.0,XSF1[i]+(XSF1[j]-XSF1[i])*f),
+    max(0.0,XSF2[i]+(XSF2[j]-XSF2[i])*f),
+    max(0.0,XSF3[i]+(XSF3[j]-XSF3[i])*f),
+    max(0.0,XSF4[i]+(XSF4[j]-XSF4[i])*f)
+  );
+}
+
+fn xs_exc_fracs(E:f32)->array<f32,5>{
+  // XEF arrays have a data bug above ~8.6 keV (indices 86-99): all five levels
+  // read 1.0 from the conversion script (division tiny/tiny = 1.0 when the
+  // Emfietzoglou source data runs out of range). Detect that via sum > 1.0001
+  // and fall back to the last valid index (i=85) so we keep physical branching.
+  if(E<=XE[0]){return array<f32,5>(XEF0[0],XEF1[0],XEF2[0],XEF3[0],XEF4[0]);}
+  if(E>=XE[XN-1u]){return array<f32,5>(XEF0[85],XEF1[85],XEF2[85],XEF3[85],XEF4[85]);}
+  let t=(log(E)-LOG_XE0)*INV_LOG_XE_STEP;
+  var i=u32(clamp(floor(t),0.0,f32(XN-2u)));
+  // Clamp index to the last valid Emfietzoglou bin (85) to dodge the XEF bug.
+  if(i>85u){i=85u;}
+  let f=select(t-f32(i),0.0,i==85u);
+  let j=min(i+1u,85u);
+  let v0=max(0.0,XEF0[i]+(XEF0[j]-XEF0[i])*f);
+  let v1=max(0.0,XEF1[i]+(XEF1[j]-XEF1[i])*f);
+  let v2=max(0.0,XEF2[i]+(XEF2[j]-XEF2[i])*f);
+  let v3=max(0.0,XEF3[i]+(XEF3[j]-XEF3[i])*f);
+  let v4=max(0.0,XEF4[i]+(XEF4[j]-XEF4[i])*f);
+  return array<f32,5>(v0,v1,v2,v3,v4);
+}
+
+fn xs_el_cos(E:f32,r:f32)->f32{
+  let rr=clamp(r,0.0,1.0);
+  let jf=rr*f32(N_AC-1u);
+  let jlo=u32(floor(jf));
+  let jhi=min(jlo+1u,N_AC-1u);
+  let fj=jf-f32(jlo);
+  let tE=(log(max(E,XAE[0]))-LOG_XAE0)*INV_LOG_XAE_STEP;
+  let iE=u32(clamp(floor(tE),0.0,f32(N_AE-2u)));
+  let fE=clamp(tE-f32(iE),0.0,1.0);
+  let base0=iE*N_AC;
+  let base1=(iE+1u)*N_AC;
+  let c00=XAC[base0+jlo];let c01=XAC[base0+jhi];
+  let c10=XAC[base1+jlo];let c11=XAC[base1+jhi];
+  let cE0=c00+(c01-c00)*fj;
+  let cE1=c10+(c11-c10)*fj;
+  return clamp(cE0+(cE1-cE0)*fE,-1.0,1.0);
+}
+
+// Sample total energy transfer from Born differential ionization CDF.
+// Uses paired CDF/E_transfer arrays with binary search (same algorithm as Geant4).
+// Inputs: E_primary (eV), shell (0..4), r uniform in [0,1).
+// Returns E_transfer (eV) = binding + secondary_KE.
+fn sample_W_sec(E:f32,shell:u32,r:f32)->f32{
+  // Find nearest primary energy in XWE via binary search
+  // (XWE is NOT log-spaced — raw Born grid, linear below 30 eV)
+  var lo:u32=0u;var hi:u32=N_WE-1u;
+  while(hi-lo>1u){let mid=(lo+hi)/2u;if(XWE[mid]<=E){lo=mid;}else{hi=mid;}}
+  let iE=select(lo,hi,abs(XWE[hi]-E)<abs(XWE[lo]-E)); // nearest
+  let base=iE*N_WR;
+  return bsearch_cdf(shell,base,r);
+}
+// Binary search in CDF array, return interpolated E_transfer.
+fn bsearch_cdf(shell:u32,base:u32,r:f32)->f32{
+  // Linear scan (N_WR=100, cheap; binary search saves ~50 iterations but
+  // WGSL has no recursion and loop overhead is similar for N=100)
+  var jlo:u32=0u;
+  for(var j=0u;j<N_WR-1u;j++){
+    let c=get_cdf(shell,base+j);
+    if(c<=r){jlo=j;}else{break;}
+  }
+  let jhi=min(jlo+1u,N_WR-1u);
+  let c0=get_cdf(shell,base+jlo);
+  let c1=get_cdf(shell,base+jhi);
+  let e0=get_etransfer(shell,base+jlo);
+  let e1=get_etransfer(shell,base+jhi);
+  if(c1<=c0){return e0;}
+  let f=clamp((r-c0)/(c1-c0),0.0,1.0);
+  // Linear interpolation (matches Geant4 G4DNACrossSectionDataSet log-log
+  // on the raw data; our paired CDF breakpoints are already on the raw grid
+  // so linear between breakpoints = same as np.interp on raw data)
+  return e0+(e1-e0)*f;
+}
+fn get_cdf(shell:u32,idx:u32)->f32{
+  if(shell==0u){return XWC0[idx];}
+  if(shell==1u){return XWC1[idx];}
+  if(shell==2u){return XWC2[idx];}
+  if(shell==3u){return XWC3[idx];}
+  return XWC4[idx];
+}
+fn get_etransfer(shell:u32,idx:u32)->f32{
+  if(shell==0u){return XWT0[idx];}
+  if(shell==1u){return XWT1[idx];}
+  if(shell==2u){return XWT2[idx];}
+  if(shell==3u){return XWT3[idx];}
+  return XWT4[idx];
+}
+
+// Total Sanche vibrational cross section. Valid in 2-100 eV, zero outside.
+// XVE is NOT log-spaced so we do a linear scan (N_VIB ~ 38, cheap).
+fn xs_vib_total(E:f32)->f32{
+  if(E<2.0||E>100.0){return 0.0;}
+  for(var i=0u;i<N_VIB-1u;i++){
+    if(E>=XVE[i]&&E<XVE[i+1u]){
+      let f=(E-XVE[i])/(XVE[i+1u]-XVE[i]);
+      return max(0.0,XVS[i]+(XVS[i+1u]-XVS[i])*f);
+    }
+  }
+  return 0.0;
+}
+
+// Sample a vibrational mode (0..8) at energy E given uniform r in [0,1).
+// Modes with threshold > E are disallowed.
+fn sample_vib_mode(E:f32,r:f32)->u32{
+  // Find bin i
+  var bin:u32=0u;
+  for(var i=0u;i<N_VIB-1u;i++){
+    if(E>=XVE[i]&&E<XVE[i+1u]){bin=i;break;}
+  }
+  // Use the lower bin's fractions (no cross-bin interp needed — fine resolution)
+  let base=bin*9u;
+  // Build cumulative weighted CDF, respecting per-mode threshold (mode cannot fire if VIB_LEV[k] > E)
+  var cumsum:f32=0.0;
+  var cs:array<f32,9>;
+  for(var k=0u;k<9u;k++){
+    let frac=select(XVMF[base+k],0.0,VIB_LEV[k]>E);
+    cumsum=cumsum+frac;
+    cs[k]=cumsum;
+  }
+  if(cumsum<=0.0){return 0u;}
+  let thr=r*cumsum;
+  for(var k=0u;k<9u;k++){
+    if(thr<cs[k]){return k;}
+  }
+  return 8u;
+}
+
+// Melton dissociative electron attachment: e⁻ + H₂O → OH⁻ + H (4–13 eV)
+// Data: G4EMLOW sigma_attachment_e_melton.dat, converted 1e-18 cm² → nm²
+const DEA_N = 14u;
+const DEA_E = array<f32,14>(0.0, 4.2, 4.3, 5.8, 6.0, 6.2, 6.4, 7.0, 7.5, 7.7, 8.4, 10.2, 11.2, 12.3);
+const DEA_S = array<f32,14>(0.0, 0.0, 0.0, 2.5e-5, 2.8e-4, 6.0e-4, 6.7e-4, 3.7e-4, 1.09e-4, 7.0e-5, 1.4e-4, 2.0e-5, 6.0e-5, 0.0);
+fn xs_dea(E:f32)->f32{
+  if(E<4.0||E>13.0){return 0.0;}
+  for(var i=0u;i<DEA_N-1u;i++){
+    if(E>=DEA_E[i]&&E<DEA_E[i+1u]){
+      let f=(E-DEA_E[i])/(DEA_E[i+1u]-DEA_E[i]);
+      return max(0.0,DEA_S[i]+(DEA_S[i+1u]-DEA_S[i])*f);
+    }
+  }
+  return 0.0;
+}
+
+fn rl(x:u32,k:u32)->u32{return(x<<k)|(x>>(32u-k));}
+fn rn(s:ptr<function,vec4u>)->u32{let r=rl((*s).x+(*s).w,7u)+(*s).x;let t=(*s).y<<9u;(*s).z^=(*s).x;(*s).w^=(*s).y;(*s).y^=(*s).z;(*s).x^=(*s).w;(*s).z^=t;(*s).w=rl((*s).w,11u);return r;}
+fn rf(s:ptr<function,vec4u>)->f32{return f32(rn(s)>>1u)/2147483647.0;}
+`;
+
+const SHADER=`
+struct P{
+  n:u32,box:f32,ce:f32,ms:u32,
+  be:f32,max_sec:u32,vc:u32,max_rad:u32,
+  start_half:f32,dna_enable:u32,dna_grid_n:u32,_pad3:u32,
+  // DNA grid params (same layout as JS buildDNATarget)
+  dna_rise:f32,dna_spacing:f32,dna_x0:f32,dna_r_bb:f32,
+};
+// R layout: total_path, productive_path (until E<12eV), final_E, n_ions, n_exc, esc, max_r, _pad
+struct R{path:f32,prod:f32,fE:f32,ni:u32,nx:u32,esc:u32,mx:f32,_pad:u32};
+// Particle struct for secondary queue: 48 bytes, 16-byte aligned.
+//   pos_E:     vec4 (px, py, pz, energy_eV)
+//   dir_alive: vec4 (dx, dy, dz, alive_flag)  — alive: 1.0=alive, 0.0=dead
+//   rng:       vec4u xorshift state
+struct Particle{pos_E:vec4<f32>,dir_alive:vec4<f32>,rng:vec4<u32>};
+
+@group(0)@binding(0) var<uniform> p:P;
+@group(0)@binding(1) var<storage,read_write> results:array<R>;
+@group(0)@binding(2) var<storage,read_write> rng:array<vec4u>;
+@group(0)@binding(3) var<storage,read_write> dbg:array<atomic<u32>>;
+// Radical position buffer: (x, y, z, kind) per radical, kind 0=OH, 1=eaq, 2=H
+@group(0)@binding(4) var<storage,read_write> rad_buf:array<vec4<f32>>;
+@group(0)@binding(5) var<storage,read_write> sec_buf:array<Particle>;
+@group(0)@binding(6) var<storage,read_write> dose:array<atomic<u32>>;
+// Shared atomic counters:
+//   [0] OH count (V1 species)
+//   [1] e-aq count
+//   [2] H count
+//   [3] H3O+ count
+//   [4] kernel-level DNA direct-hit counter (events within r_bb+0.29 nm
+//       of any DNA backbone across the full fiber grid; compare against
+//       the JS post-processing scoreDirectSSB_events as a consistency check)
+//   [5] unused
+//   [6] secondary append index (atomic)
+//   [7] radical append index (atomic)
+@group(0)@binding(7) var<storage,read_write> counters:array<atomic<u32>>;
+
+// Check whether a world-space position is within r_damage of any DNA
+// backbone atom on the fiber grid. Returns 1u if within reach of either
+// strand, else 0u. Grid layout matches JS buildDNATarget: NxN parallel
+// fibers along X, uniform (y,z) spacing, straight B-DNA helix per fiber.
+fn dna_near(px:f32,py:f32,pz:f32)->u32{
+  if(p.dna_enable==0u){return 0u;}
+  let r_damage:f32=0.29;
+  let N=p.dna_grid_n;
+  let spacing=p.dna_spacing;
+  let grid_off = -(f32(N-1u)*spacing)*0.5;
+  let inv_s = 1.0/spacing;
+  // Snap (py,pz) to nearest fiber. Round to nearest integer index.
+  let fi_raw = (py - grid_off) * inv_s;
+  let fj_raw = (pz - grid_off) * inv_s;
+  let fi = i32(round(fi_raw));
+  let fj = i32(round(fj_raw));
+  if(fi<0 || fi>=i32(N) || fj<0 || fj>=i32(N)){return 0u;}
+  let fy = grid_off + f32(fi)*spacing;
+  let fz = grid_off + f32(fj)*spacing;
+  let y_rel = py - fy;
+  let z_rel = pz - fz;
+  let r2 = y_rel*y_rel + z_rel*z_rel;
+  let R_reach = p.dna_r_bb + r_damage;
+  if(r2 > R_reach*R_reach){return 0u;}
+  // Snap to nearest bp along X
+  let bp_est = i32(round((px - p.dna_x0)/p.dna_rise));
+  // Check ±1 bp for helical offset tolerance
+  let b0 = max(0,bp_est-1);
+  let b1 = bp_est+1;
+  let d_phase = 2.0*PI/10.5;
+  let r_bb = p.dna_r_bb;
+  for(var b:i32=b0;b<=b1;b=b+1){
+    let bx = p.dna_x0 + f32(b)*p.dna_rise;
+    let phi = f32(b)*d_phase;
+    // Strand 0
+    let s0y = r_bb*cos(phi);
+    let s0z = r_bb*sin(phi);
+    let dx = px - bx;
+    let dy0 = y_rel - s0y;
+    let dz0 = z_rel - s0z;
+    if(dx*dx + dy0*dy0 + dz0*dz0 < r_damage*r_damage){return 1u;}
+    // Strand 1
+    let s1y = r_bb*cos(phi+PI);
+    let s1z = r_bb*sin(phi+PI);
+    let dy1 = y_rel - s1y;
+    let dz1 = z_rel - s1z;
+    if(dx*dx + dy1*dy1 + dz1*dz1 < r_damage*r_damage){return 1u;}
+  }
+  return 0u;
+}
+
+// Meesungnoen2002: electron thermalization penetration → 1D Gaussian sigma (nm)
+// Polynomial fit to mean radial distance, converted via sigma = r_mean * sqrt(pi/8)
+fn meesungnoen_sigma(k:f32)->f32{
+  if(k<=0.1){return 0.0;}
+  var r=-4.06217193e-08;
+  r=r*k+3.06848412e-06;r=r*k-9.93217814e-05;r=r*k+1.80172797e-03;
+  r=r*k-2.01135480e-02;r=r*k+1.42939448e-01;r=r*k-6.48348714e-01;
+  r=r*k+1.85227848e+00;r=r*k-3.36450378e+00;r=r*k+4.37785068e+00;
+  r=r*k-4.20557339e+00;r=r*k+3.81679083e+00;r=r*k-2.34069784e-01;
+  return max(r,0.0)*0.6267;
+}
+
+// Deposit energy (eV) at voxel containing world position (px,py,pz). Thread-safe.
+// Dose is stored in fixed-point: 1000 units = 1 eV.
+fn deposit(px:f32,py:f32,pz:f32,dep_eV:f32,box:f32,vc:u32){
+  if(dep_eV<=0.0){return;}
+  let vs=2.0*box/f32(vc);
+  let ix=i32(floor((px+box)/vs));
+  let iy=i32(floor((py+box)/vs));
+  let iz=i32(floor((pz+box)/vs));
+  let n=i32(vc);
+  if(ix<0||ix>=n||iy<0||iy>=n||iz<0||iz>=n){return;}
+  let vi=u32((iz*n+iy)*n+ix);
+  atomicAdd(&dose[vi],u32(dep_eV*100.0));
+}
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid:vec3u){
+  let idx=gid.x;
+  if(idx>=p.n){return;}
+  var s=rng[idx];
+
+  var E=p.be;
+  let pid=f32(gid.x)*8.0; // primary ID for rad_buf tagging
+  // Start position: uniform in ±start_half cube if start_half>0, else origin.
+  // Used to distribute tracks for unbiased bulk-dose yield measurements.
+  var px=0.0;var py=0.0;var pz=0.0;
+  let sh=p.start_half;
+  if(sh>0.0){
+    px=(rf(&s)*2.0-1.0)*sh;
+    py=(rf(&s)*2.0-1.0)*sh;
+    pz=(rf(&s)*2.0-1.0)*sh;
+  }
+  // Stash start_half in debug slot 2 for JS visibility
+  if(idx==0u){atomicStore(&dbg[2],u32(sh));}
+  let start_px=px;let start_py=py;let start_pz=pz;
+  // Isotropic initial direction for unbiased CSDA measurement
+  let u1=max(rf(&s),1e-10);
+  let u2=rf(&s);
+  let cos_i=1.0-2.0*u1;
+  let sin_i=sqrt(max(0.0,1.0-cos_i*cos_i));
+  let phi_i=2.0*PI*u2;
+  var dx=sin_i*cos(phi_i);
+  var dy=sin_i*sin(phi_i);
+  var dz=cos_i;
+
+  var total_path:f32=0.0;
+  var productive_path:f32=0.0;  // accumulated only while E > 12 eV (above inelastic dead zone)
+  var n_ions:u32=0u;
+  var n_exc:u32=0u;
+  var escaped:u32=0u;
+  var max_r:f32=0.0;
+
+  for(var step=0u;step<p.ms;step++){
+    if(E<p.ce){break;}
+    if(abs(px)>=p.box||abs(py)>=p.box||abs(pz)>=p.box){escaped=1u;break;}
+    let productive=E>12.0;
+
+    let xs=xs_all(E);
+    let s_vib=xs_vib_total(E);
+    let s_dea=xs_dea(E);
+    let s_tot=xs.x+xs.y+xs.z+s_vib+s_dea;
+    if(s_tot<=0.0){break;}
+
+    let lambda=1.0/(NW*s_tot);
+    let dist=-log(max(rf(&s),1e-10))*lambda;
+
+    // Champion elastic scatter angle
+    let r_el=rf(&s);
+    let cos_el=xs_el_cos(E,r_el);
+    let sin_el=sqrt(max(0.0,1.0-cos_el*cos_el));
+    let phi_el=2.0*PI*rf(&s);let cp=cos(phi_el);let sp=sin(phi_el);
+    if(abs(dz)>0.99999){let sw=select(-1.0,1.0,dz>0.0);dx=sin_el*cp;dy=sin_el*sp*sw;dz=cos_el*sw;}
+    else{let q=sqrt(1.0-dz*dz);let inv=1.0/q;let nx=dx*cos_el+sin_el*(dx*dz*cp-dy*sp)*inv;let ny=dy*cos_el+sin_el*(dy*dz*cp+dx*sp)*inv;let nz=dz*cos_el-q*sin_el*cp;let len=sqrt(nx*nx+ny*ny+nz*nz);dx=nx/len;dy=ny/len;dz=nz/len;}
+
+    px+=dx*dist;py+=dy*dist;pz+=dz*dist;
+    total_path+=dist;
+    if(productive){productive_path+=dist;}
+    let rdx=px-start_px;let rdy=py-start_py;let rdz=pz-start_pz;
+    let r=sqrt(rdx*rdx+rdy*rdy+rdz*rdz);
+    if(r>max_r){max_r=r;}
+    if(abs(px)>=p.box||abs(py)>=p.box||abs(pz)>=p.box){escaped=1u;break;}
+
+    // Event type sampling
+    let r_type=rf(&s)*s_tot;
+    if(r_type<xs.x&&E>SB[0]){
+      // Ionization: sample shell, then W_sec from Emfietzoglou differential CDF
+      let sf=xs_shell_fracs(E);
+      let fsum=max(sf[0]+sf[1]+sf[2]+sf[3]+sf[4],1e-12);
+      let r_sh=rf(&s)*fsum;
+      var bind:f32=SB[0];
+      var shell_idx:u32=0u;
+      if(r_sh<sf[0]){bind=SB[0];shell_idx=0u;}
+      else if(r_sh<sf[0]+sf[1]){bind=SB[1];shell_idx=1u;}
+      else if(r_sh<sf[0]+sf[1]+sf[2]){bind=SB[2];shell_idx=2u;}
+      else if(r_sh<sf[0]+sf[1]+sf[2]+sf[3]){bind=SB[3];shell_idx=3u;}
+      else{bind=SB[4];shell_idx=4u;}
+      if(E>bind){
+        // Born differential CDF returns TOTAL energy transfer (bind + sec_KE).
+        // Geant4: sec_KE = TransferedEnergy(random) - IonisationEnergy(shell)
+        let r_w=rf(&s);
+        let W_transfer_max=(E+bind)*0.5;  // max transfer for electrons
+        var W_transfer=sample_W_sec(E,shell_idx,r_w);
+        W_transfer=clamp(W_transfer,bind,W_transfer_max);
+        let W_sec=max(W_transfer-bind,0.0);  // secondary KE
+        E-=W_transfer;  // primary loses total transfer (NOT bind+W_sec)
+        n_ions=n_ions+1u;
+        atomicAdd(&dbg[4],u32(W_transfer*10.0)); // debug: sum of W_transfer × 10
+        // Deposit the binding energy at this ionization site. W_sec is carried
+        // away by the secondary (to be deposited where IT thermalizes), OR if
+        // the secondary is below cutoff then deposit it here too.
+        deposit(px,py,pz,bind,p.box,p.vc);
+        if(W_sec<=p.ce){deposit(px,py,pz,W_sec,p.box,p.vc);}
+        // Pre-chemistry: H2O+ products (OH + H3O+ or H2Ovib branches) emitted
+        // inside the recomb-vs-no-recomb branch below. DNA hit counted here.
+        if(dna_near(px,py,pz)==1u){atomicAdd(&counters[4],1u);}
+        // Mother molecule displacement (G4DNAWaterDissociationDisplacer:
+        // Ionisation RMS=2.0nm → sigma_1D = 2.0/sqrt(3) = 1.1547nm)
+        let m_s=1.1547005;
+        let mu1_i=max(rf(&s),1e-30);let mu2_i=rf(&s);
+        let mr_i=sqrt(-2.0*log(mu1_i))*m_s;
+        let mdx_i=mr_i*cos(6.2831853*mu2_i);let mdy_i=mr_i*sin(6.2831853*mu2_i);
+        let mu3_i=max(rf(&s),1e-30);let mu4_i=rf(&s);
+        let mdz_i=sqrt(-2.0*log(mu3_i))*m_s*cos(6.2831853*mu4_i);
+        let mpx=px+mdx_i;let mpy=py+mdy_i;let mpz=pz+mdz_i;
+        // eaq placement: if secondary electron is tracked (W_sec > cutoff),
+        // defer eaq creation to secondary shader thermalization point.
+        // If sub-cutoff, create eaq here with Meesungnoen displacement, then
+        // apply G4DNAElectronHoleRecombination: H2O+ recombines with its own
+        // eaq with probability 1 - exp(-r_Onsager / r) (r_Onsager ≈ 0.711 nm).
+        // On recombination, OH + H3O+ + eaq are REPLACED by H2Ovib dissociation
+        // products (13.65% 2OH+H2, 35.75% OH+H, 15.6% 2H+O, 35% relax).
+        if(W_sec<=p.ce){
+          let eaq_s=meesungnoen_sigma(W_sec);
+          var epx=px;var epy=py;var epz=pz;
+          if(eaq_s>0.0){
+            let eu1=max(rf(&s),1e-30);let eu2=rf(&s);
+            let er=sqrt(-2.0*log(eu1))*eaq_s;
+            epx+=er*cos(6.2831853*eu2);epy+=er*sin(6.2831853*eu2);
+            let eu3=max(rf(&s),1e-30);let eu4=rf(&s);
+            epz+=sqrt(-2.0*log(eu3))*eaq_s*cos(6.2831853*eu4);
+          }
+          // Distance from H2O+ (mother-displaced site) to thermalized eaq
+          let rdx=epx-mpx;let rdy=epy-mpy;let rdz=epz-mpz;
+          let r_sep=max(sqrt(rdx*rdx+rdy*rdy+rdz*rdz),1e-6);
+          let r_onsager:f32=0.711;  // q1*q2 * e^2/(4πε₀ε_r kT) at 298 K, ε=78
+          let p_recomb=1.0-exp(-r_onsager/r_sep);
+          let r_recomb=rf(&s);
+          if(r_recomb<p_recomb){
+            // Electron-hole recombination: H2O+ + eaq → H2Ovib → dissociation
+            let r_vd=rf(&s);
+            if(r_vd<0.1365){
+              // 13.65% → 2OH + H2
+              atomicAdd(&counters[0],2u);
+              atomicAdd(&counters[5],1u); // H2 counter
+              let ri=atomicAdd(&counters[7],3u);
+              if(ri+2u<p.max_rad){
+                rad_buf[ri]   =vec4<f32>(mpx,mpy,mpz,0.0+pid);
+                rad_buf[ri+1u]=vec4<f32>(mpx,mpy,mpz,0.0+pid);
+                rad_buf[ri+2u]=vec4<f32>(mpx,mpy,mpz,7.0+pid);
+              }
+            }else if(r_vd<0.494){
+              // 35.75% → OH + H
+              atomicAdd(&counters[0],1u);
+              atomicAdd(&counters[2],1u);
+              let ri=atomicAdd(&counters[7],2u);
+              if(ri+1u<p.max_rad){
+                rad_buf[ri]   =vec4<f32>(mpx,mpy,mpz,0.0+pid);
+                rad_buf[ri+1u]=vec4<f32>(mpx,mpy,mpz,2.0+pid);
+              }
+            }else if(r_vd<0.650){
+              // 15.6% → 2H + O (O not tracked)
+              atomicAdd(&counters[2],2u);
+              let ri=atomicAdd(&counters[7],2u);
+              if(ri+1u<p.max_rad){
+                rad_buf[ri]   =vec4<f32>(mpx,mpy,mpz,2.0+pid);
+                rad_buf[ri+1u]=vec4<f32>(mpx,mpy,mpz,2.0+pid);
+              }
+            }
+            // else: 35% relaxation — no products
+          }else{
+            // No recombination: normal pre-chem OH + H3O+ + eaq
+            atomicAdd(&counters[0],1u);  // OH
+            atomicAdd(&counters[1],1u);  // eaq
+            atomicAdd(&counters[3],1u);  // H3O+
+            let ri=atomicAdd(&counters[7],3u);
+            if(ri+2u<p.max_rad){
+              rad_buf[ri]   =vec4<f32>(mpx,mpy,mpz,0.0+pid);
+              rad_buf[ri+1u]=vec4<f32>(epx,epy,epz,5.0+pid); // species=5: pre-thermalized eaq
+              rad_buf[ri+2u]=vec4<f32>(mpx,mpy,mpz,3.0+pid);
+            }
+          }
+        }else{
+          // Tracked secondary (W_sec > p.ce): approximate the H2O+→eaq
+          // separation with a simple track-length model, since the secondary
+          // propagates through many steps before thermalizing and its final
+          // position isn't known here.
+          //   r_track ≈ 0.04 * W_sec^1.3 [nm] (empirical water CSDA-like fit:
+          //     ~1 nm @ 10 eV, ~20 nm @ 100 eV, ~320 nm @ 1 keV)
+          //   r_tail  = meesungnoen_sigma(min(W_sec, 7.4))  — post-propagation
+          //     thermalization sigma (polynomial valid only up to ~7.4 eV, so
+          //     clamp to avoid blow-up at higher energies)
+          // P_recomb at r_sep is Onsager 1 - exp(-0.711 / r_sep). For low
+          // energies (near cutoff) this is ~20% → real H2Ovib contribution;
+          // for E>100 eV it drops below 5% and fades quickly. On recomb fire,
+          // emit H2Ovib dissociation products; the tracked secondary still
+          // propagates and creates its own eaq at thermalization (mild
+          // overcounting since that eaq should be consumed, but we can't
+          // kill the sec_buf entry without a dedicated flag field).
+          let r_track=0.04*pow(W_sec,1.3);
+          let r_tail=meesungnoen_sigma(min(W_sec,7.4));
+          let r_sep_est=max(r_track+r_tail,1e-3);
+          let r_onsager_t:f32=0.711;
+          let p_recomb_t=1.0-exp(-r_onsager_t/r_sep_est);
+          let r_recomb_t=rf(&s);
+          if(r_recomb_t<p_recomb_t){
+            let r_vd=rf(&s);
+            if(r_vd<0.1365){
+              // 13.65% → 2OH + H2
+              atomicAdd(&counters[0],2u);
+              atomicAdd(&counters[5],1u);
+              let ri=atomicAdd(&counters[7],3u);
+              if(ri+2u<p.max_rad){
+                rad_buf[ri]   =vec4<f32>(mpx,mpy,mpz,0.0+pid);
+                rad_buf[ri+1u]=vec4<f32>(mpx,mpy,mpz,0.0+pid);
+                rad_buf[ri+2u]=vec4<f32>(mpx,mpy,mpz,7.0+pid);
+              }
+            }else if(r_vd<0.494){
+              // 35.75% → OH + H
+              atomicAdd(&counters[0],1u);
+              atomicAdd(&counters[2],1u);
+              let ri=atomicAdd(&counters[7],2u);
+              if(ri+1u<p.max_rad){
+                rad_buf[ri]   =vec4<f32>(mpx,mpy,mpz,0.0+pid);
+                rad_buf[ri+1u]=vec4<f32>(mpx,mpy,mpz,2.0+pid);
+              }
+            }else if(r_vd<0.650){
+              // 15.6% → 2H + O (O not tracked)
+              atomicAdd(&counters[2],2u);
+              let ri=atomicAdd(&counters[7],2u);
+              if(ri+1u<p.max_rad){
+                rad_buf[ri]   =vec4<f32>(mpx,mpy,mpz,2.0+pid);
+                rad_buf[ri+1u]=vec4<f32>(mpx,mpy,mpz,2.0+pid);
+              }
+            }
+            // else: 35% relax — no products
+          }else{
+            // No recomb: emit OH + H3O+ (eaq created later by sec shader)
+            atomicAdd(&counters[0],1u);  // OH
+            atomicAdd(&counters[3],1u);  // H3O+
+            let ri=atomicAdd(&counters[7],2u);
+            if(ri+1u<p.max_rad){
+              rad_buf[ri]   =vec4<f32>(mpx,mpy,mpz,0.0+pid);
+              rad_buf[ri+1u]=vec4<f32>(mpx,mpy,mpz,3.0+pid);
+            }
+          }
+        }
+
+        // Emit secondary electron to sec_buf if energy is above cutoff.
+        // G4DNABornAngle: secondary direction depends on W_sec:
+        //   <50 eV: isotropic
+        //   50-200 eV: 10% isotropic, 90% forward-peaked (cos=U*sqrt(2)/2)
+        //   >200 eV: sin²θ = (1-Esec/Einc)/(1+Esec/(2*511keV)), cos = sqrt(1-sin²)
+        // After emission, primary direction updated via momentum conservation:
+        //   p_final = p_incident - p_secondary (Geant4 G4DNABornIonisationModel1)
+        if(W_sec>p.ce){
+          let sec_idx=atomicAdd(&counters[6],1u);
+          if(sec_idx<p.max_sec){
+            let E_before=E+bind+W_sec;
+            // G4DNABornAngle secondary angular sampling
+            var cos_s:f32;
+            if(W_sec<50.0){
+              cos_s=2.0*rf(&s)-1.0; // isotropic
+            }else if(W_sec<=200.0){
+              if(rf(&s)<=0.1){cos_s=2.0*rf(&s)-1.0;} // 10% isotropic
+              else{cos_s=rf(&s)*0.70710678;} // 90% forward: cos in [0, sqrt(2)/2]
+            }else{
+              let sin2=clamp((1.0-W_sec/E_before)/(1.0+W_sec/1022000.0),0.0,1.0);
+              cos_s=sqrt(max(0.0,1.0-sin2));
+            }
+            let sin_s=sqrt(max(0.0,1.0-cos_s*cos_s));
+            let phi_s=2.0*PI*rf(&s);
+            let cps=cos(phi_s);let sps=sin(phi_s);
+            // Rotate (sin_s*cps, sin_s*sps, cos_s) from primary-local to world frame
+            var sdx:f32;var sdy:f32;var sdz:f32;
+            if(abs(dz)>0.99999){
+              let sw=select(-1.0,1.0,dz>0.0);
+              sdx=sin_s*cps;
+              sdy=sin_s*sps*sw;
+              sdz=cos_s*sw;
+            }else{
+              let q=sqrt(1.0-dz*dz);
+              let inv=1.0/q;
+              let nx=dx*cos_s+sin_s*(dx*dz*cps-dy*sps)*inv;
+              let ny=dy*cos_s+sin_s*(dy*dz*cps+dx*sps)*inv;
+              let nz=dz*cos_s-q*sin_s*cps;
+              let len=sqrt(nx*nx+ny*ny+nz*nz);
+              sdx=nx/len;sdy=ny/len;sdz=nz/len;
+            }
+            // Primary momentum conservation: p_final = p_inc - p_sec
+            // Non-relativistic: p = sqrt(2mE), so p ∝ sqrt(E)
+            let p_inc=sqrt(E_before);
+            let p_sec=sqrt(W_sec);
+            let p_fx=p_inc*dx-p_sec*sdx;
+            let p_fy=p_inc*dy-p_sec*sdy;
+            let p_fz=p_inc*dz-p_sec*sdz;
+            let p_flen=sqrt(p_fx*p_fx+p_fy*p_fy+p_fz*p_fz);
+            if(p_flen>1e-10){dx=p_fx/p_flen;dy=p_fy/p_flen;dz=p_fz/p_flen;}
+            // Fresh RNG state for the child (4 draws from parent)
+            let r0=rn(&s);let r1=rn(&s);let r2=rn(&s);let r3=rn(&s);
+            var sec:Particle;
+            sec.pos_E=vec4<f32>(px,py,pz,W_sec);
+            sec.dir_alive=vec4<f32>(sdx,sdy,sdz,f32(gid.x+1u));
+            sec.rng=vec4u(r0,r1,r2,r3);
+            sec_buf[sec_idx]=sec;
+          }
+        }
+      }
+    }else if(r_type<xs.x+xs.y){
+      // Electronic excitation (Born water levels, data-driven fractions)
+      let ef=xs_exc_fracs(E);
+      let efsum=max(ef[0]+ef[1]+ef[2]+ef[3]+ef[4],1e-12);
+      let r_ex=rf(&s)*efsum;
+      var exc_E:f32;
+      var exc_lvl:u32;
+      if(r_ex<ef[0]){exc_E=EX[0];exc_lvl=0u;}
+      else if(r_ex<ef[0]+ef[1]){exc_E=EX[1];exc_lvl=1u;}
+      else if(r_ex<ef[0]+ef[1]+ef[2]){exc_E=EX[2];exc_lvl=2u;}
+      else if(r_ex<ef[0]+ef[1]+ef[2]+ef[3]){exc_E=EX[3];exc_lvl=3u;}
+      else{exc_E=EX[4];exc_lvl=4u;}
+      let dep=min(exc_E,E);
+      E-=dep;
+      deposit(px,py,pz,dep,p.box,p.vc);
+      n_exc=n_exc+1u;
+      // Pre-chemistry from G4ChemDissociationChannels.cc:
+      // Level 0 (A1B1): 65% OH+H, 35% relaxation
+      // Level 1 (B1A1): 55% autoionization (OH+H3O++eaq), 15% 2OH+H2, 30% relax
+      // Level 2-4:      50% autoionization, 50% relaxation
+      let r_ch=rf(&s);
+      if(exc_lvl==0u){
+        // A1B1: 65% dissociation → OH + H
+        if(r_ch<0.65){
+          atomicAdd(&counters[0],1u);  // OH•
+          atomicAdd(&counters[2],1u);  // H•
+          let re=atomicAdd(&counters[7],2u);
+          if(re+1u<p.max_rad){
+            rad_buf[re]   =vec4<f32>(px,py,pz,0.0+pid);
+            rad_buf[re+1u]=vec4<f32>(px,py,pz,2.0+pid);
+          }
+        }
+      }else if(exc_lvl==1u){
+        // B1A1 — 5 channels from G4ChemDissociationChannels_option1 (cumulative):
+        //   17.5%  relax (no products)
+        //   3.25%  → 2OH + H2
+        //   50%    → OH + H3O+ + eaq (autoionization, mother disp RMS=2nm)
+        //   25.35% → OH + H
+        //   3.9%   → 2H + O (O not tracked, only emit 2 H)
+        if(r_ch<0.175){
+          // Relaxation, no products
+        }else if(r_ch<0.2075){
+          // B1A1 dissociation → 2OH + H2 (H2 marker code 7 in rad_buf)
+          atomicAdd(&counters[0],2u);
+          atomicAdd(&counters[5],1u); // initial H2 counter (UI display)
+          let re=atomicAdd(&counters[7],3u);
+          if(re+2u<p.max_rad){
+            rad_buf[re]   =vec4<f32>(px,py,pz,0.0+pid);
+            rad_buf[re+1u]=vec4<f32>(px,py,pz,0.0+pid);
+            rad_buf[re+2u]=vec4<f32>(px,py,pz,7.0+pid);
+          }
+        }else if(r_ch<0.7075){
+          // B1A1 autoionization → OH + H3O+ + eaq (mother disp RMS=2nm)
+          // Geant4 DNA: H2O+ created here ALSO undergoes G4DNAElectronHoleRecombination
+          // with the emitted eaq. Probability = 1 - exp(-r_Onsager/r_sep). On recomb,
+          // replace OH+H3O++eaq with H2Ovib dissociation products (matches sub-cutoff
+          // ionization recomb pathway). Meesungnoen at 1.7 eV is a reasonable proxy
+          // for the autoionization eaq thermalization radius.
+          let ms_b=1.1547005;
+          let mb1=max(rf(&s),1e-30);let mb2=rf(&s);
+          let mbr=sqrt(-2.0*log(mb1))*ms_b;
+          let mbdx=mbr*cos(6.2831853*mb2);let mbdy=mbr*sin(6.2831853*mb2);
+          let mb3=max(rf(&s),1e-30);let mb4=rf(&s);
+          let mbdz=sqrt(-2.0*log(mb3))*ms_b*cos(6.2831853*mb4);
+          let bpx=px+mbdx;let bpy=py+mbdy;let bpz=pz+mbdz;
+          let eaq_s_b=meesungnoen_sigma(1.7);
+          var aex=bpx;var aey=bpy;var aez=bpz;
+          if(eaq_s_b>0.0){
+            let ab1=max(rf(&s),1e-30);let ab2=rf(&s);
+            let abr=sqrt(-2.0*log(ab1))*eaq_s_b;
+            aex+=abr*cos(6.2831853*ab2);aey+=abr*sin(6.2831853*ab2);
+            let ab3=max(rf(&s),1e-30);let ab4=rf(&s);
+            aez+=sqrt(-2.0*log(ab3))*eaq_s_b*cos(6.2831853*ab4);
+          }
+          let abdx=aex-bpx;let abdy=aey-bpy;let abdz=aez-bpz;
+          let abr_sep=max(sqrt(abdx*abdx+abdy*abdy+abdz*abdz),1e-6);
+          let ab_onsager:f32=0.711;
+          let abp_recomb=1.0-exp(-ab_onsager/abr_sep);
+          let abrr=rf(&s);
+          if(abrr<abp_recomb){
+            let abvd=rf(&s);
+            if(abvd<0.1365){
+              // 13.65% → 2OH + H2
+              atomicAdd(&counters[0],2u);
+              atomicAdd(&counters[5],1u);
+              let abri=atomicAdd(&counters[7],3u);
+              if(abri+2u<p.max_rad){
+                rad_buf[abri]   =vec4<f32>(bpx,bpy,bpz,0.0+pid);
+                rad_buf[abri+1u]=vec4<f32>(bpx,bpy,bpz,0.0+pid);
+                rad_buf[abri+2u]=vec4<f32>(bpx,bpy,bpz,7.0+pid);
+              }
+            }else if(abvd<0.494){
+              // 35.75% → OH + H
+              atomicAdd(&counters[0],1u);
+              atomicAdd(&counters[2],1u);
+              let abri=atomicAdd(&counters[7],2u);
+              if(abri+1u<p.max_rad){
+                rad_buf[abri]   =vec4<f32>(bpx,bpy,bpz,0.0+pid);
+                rad_buf[abri+1u]=vec4<f32>(bpx,bpy,bpz,2.0+pid);
+              }
+            }else if(abvd<0.650){
+              // 15.6% → 2H + O (O not tracked)
+              atomicAdd(&counters[2],2u);
+              let abri=atomicAdd(&counters[7],2u);
+              if(abri+1u<p.max_rad){
+                rad_buf[abri]   =vec4<f32>(bpx,bpy,bpz,2.0+pid);
+                rad_buf[abri+1u]=vec4<f32>(bpx,bpy,bpz,2.0+pid);
+              }
+            }
+            // else 35% relax — no products
+          }else{
+            // No recomb: emit normal B1A1 autoionization products
+            atomicAdd(&counters[0],1u);  // OH
+            atomicAdd(&counters[1],1u);  // eaq
+            atomicAdd(&counters[3],1u);  // H3O+
+            let re=atomicAdd(&counters[7],3u);
+            if(re+2u<p.max_rad){
+              rad_buf[re]   =vec4<f32>(bpx,bpy,bpz,0.0+pid);  // OH at mother
+              rad_buf[re+1u]=vec4<f32>(aex,aey,aez,1.0+pid);  // eaq displaced
+              rad_buf[re+2u]=vec4<f32>(bpx,bpy,bpz,3.0+pid);  // H3O+ at mother
+            }
+          }
+        }else if(r_ch<0.961){
+          // B1A1 dissociation → OH + H
+          atomicAdd(&counters[0],1u);  // OH
+          atomicAdd(&counters[2],1u);  // H
+          let re=atomicAdd(&counters[7],2u);
+          if(re+1u<p.max_rad){
+            rad_buf[re]   =vec4<f32>(px,py,pz,0.0+pid);
+            rad_buf[re+1u]=vec4<f32>(px,py,pz,2.0+pid);
+          }
+        }else{
+          // B1A1 dissociation → 2H + O (O atom not tracked, emit 2 H only)
+          atomicAdd(&counters[2],2u);
+          let re=atomicAdd(&counters[7],2u);
+          if(re+1u<p.max_rad){
+            rad_buf[re]   =vec4<f32>(px,py,pz,2.0+pid);
+            rad_buf[re+1u]=vec4<f32>(px,py,pz,2.0+pid);
+          }
+        }
+      }else{
+        // Levels 2-4: 50% autoionization → OH + H3O+ + eaq (mother disp RMS=2nm)
+        // Geant4 DNA: H2O+ here also undergoes G4DNAElectronHoleRecombination
+        // with the eaq. Same treatment as B1A1 autoionization above.
+        if(r_ch<0.50){
+          let ms_h=1.1547005;
+          let mh1=max(rf(&s),1e-30);let mh2=rf(&s);
+          let mhr=sqrt(-2.0*log(mh1))*ms_h;
+          let mhdx=mhr*cos(6.2831853*mh2);let mhdy=mhr*sin(6.2831853*mh2);
+          let mh3=max(rf(&s),1e-30);let mh4=rf(&s);
+          let mhdz=sqrt(-2.0*log(mh3))*ms_h*cos(6.2831853*mh4);
+          let hpx=px+mhdx;let hpy=py+mhdy;let hpz=pz+mhdz;
+          let eaq_s_h=meesungnoen_sigma(1.7);
+          var hex=hpx;var hey=hpy;var hez=hpz;
+          if(eaq_s_h>0.0){
+            let ah1=max(rf(&s),1e-30);let ah2=rf(&s);
+            let ahr=sqrt(-2.0*log(ah1))*eaq_s_h;
+            hex+=ahr*cos(6.2831853*ah2);hey+=ahr*sin(6.2831853*ah2);
+            let ah3=max(rf(&s),1e-30);let ah4=rf(&s);
+            hez+=sqrt(-2.0*log(ah3))*eaq_s_h*cos(6.2831853*ah4);
+          }
+          let ahdx=hex-hpx;let ahdy=hey-hpy;let ahdz=hez-hpz;
+          let ahr_sep=max(sqrt(ahdx*ahdx+ahdy*ahdy+ahdz*ahdz),1e-6);
+          let ah_onsager:f32=0.711;
+          let ahp_recomb=1.0-exp(-ah_onsager/ahr_sep);
+          let ahrr=rf(&s);
+          if(ahrr<ahp_recomb){
+            let ahvd=rf(&s);
+            if(ahvd<0.1365){
+              atomicAdd(&counters[0],2u);
+              atomicAdd(&counters[5],1u);
+              let ahri=atomicAdd(&counters[7],3u);
+              if(ahri+2u<p.max_rad){
+                rad_buf[ahri]   =vec4<f32>(hpx,hpy,hpz,0.0+pid);
+                rad_buf[ahri+1u]=vec4<f32>(hpx,hpy,hpz,0.0+pid);
+                rad_buf[ahri+2u]=vec4<f32>(hpx,hpy,hpz,7.0+pid);
+              }
+            }else if(ahvd<0.494){
+              atomicAdd(&counters[0],1u);
+              atomicAdd(&counters[2],1u);
+              let ahri=atomicAdd(&counters[7],2u);
+              if(ahri+1u<p.max_rad){
+                rad_buf[ahri]   =vec4<f32>(hpx,hpy,hpz,0.0+pid);
+                rad_buf[ahri+1u]=vec4<f32>(hpx,hpy,hpz,2.0+pid);
+              }
+            }else if(ahvd<0.650){
+              atomicAdd(&counters[2],2u);
+              let ahri=atomicAdd(&counters[7],2u);
+              if(ahri+1u<p.max_rad){
+                rad_buf[ahri]   =vec4<f32>(hpx,hpy,hpz,2.0+pid);
+                rad_buf[ahri+1u]=vec4<f32>(hpx,hpy,hpz,2.0+pid);
+              }
+            }
+            // else 35% relax
+          }else{
+            atomicAdd(&counters[0],1u);
+            atomicAdd(&counters[1],1u);
+            atomicAdd(&counters[3],1u);
+            let re=atomicAdd(&counters[7],3u);
+            if(re+2u<p.max_rad){
+              rad_buf[re]   =vec4<f32>(hpx,hpy,hpz,0.0+pid);
+              rad_buf[re+1u]=vec4<f32>(hex,hey,hez,1.0+pid);
+              rad_buf[re+2u]=vec4<f32>(hpx,hpy,hpz,3.0+pid);
+            }
+          }
+        }
+        // else: 50% relaxation
+      }
+      if(dna_near(px,py,pz)==1u){atomicAdd(&counters[4],1u);}
+    }else if(r_type<xs.x+xs.y+s_vib){
+      // Sanche vibrational excitation (2-100 eV, 9 modes).
+      // G4DNASancheExcitationModel::SampleSecondaries only deposits energy;
+      // it does NOT create molecular products. H2Ovib comes from
+      // G4DNAElectronHoleRecombination (H2O+ + eaq → H2Ovib → dissoc),
+      // which is modeled separately at the ionization site below.
+      let mode=sample_vib_mode(E,rf(&s));
+      let dep=min(VIB_LEV[mode],E);
+      E-=dep;
+      deposit(px,py,pz,dep,p.box,p.vc);
+    }else if(r_type<xs.x+xs.y+s_vib+s_dea){
+      // Melton dissociative electron attachment (G4ChemDissociationChannels_option1):
+      // e⁻ + H₂O → H₂ + OH⁻ + OH (DissociAttachment_ch1, single channel)
+      // Electron is captured; deposit all energy.
+      deposit(px,py,pz,E,p.box,p.vc);
+      atomicAdd(&counters[0],1u);  // OH (counters[0])
+      atomicAdd(&counters[5],1u);  // initial H2 (counters[5])
+      // OH- is tracked via rad_buf species code 6 (worker species index 5)
+      let re=atomicAdd(&counters[7],3u);
+      if(re+2u<p.max_rad){
+        rad_buf[re]   =vec4<f32>(px,py,pz,0.0+pid);  // OH (species 0)
+        rad_buf[re+1u]=vec4<f32>(px,py,pz,6.0+pid);  // OH- (worker species 5)
+        rad_buf[re+2u]=vec4<f32>(px,py,pz,7.0+pid);  // H2 marker (counted, not tracked)
+      }
+      E=0.0; // electron killed
+    }
+    // else: elastic, no energy loss
+  }
+
+  // Deposit residual energy at final position for energy conservation.
+  // Skip if particle escaped (its remaining E left the simulation volume).
+  if(escaped==0u&&E>0.0){deposit(px,py,pz,E,p.box,p.vc);}
+
+  results[idx]=R(total_path,productive_path,E,n_ions,n_exc,escaped,max_r,0u);
+  rng[idx]=s;
+  atomicAdd(&dbg[0],n_ions);
+  atomicAdd(&dbg[1],n_exc);
+  atomicAdd(&dbg[2],escaped);
+  atomicAdd(&dbg[3],1u);
+}
+`;
+
+// ===========================================================================
+// SECONDARY STEPPING SHADER — wavefront stepper for secondary electrons.
+// One compute dispatch per step. All live secondaries in sec_buf advance one
+// step. Dead particles early-return. Tertiary secondaries are absorbed in
+// place (v1 behavior — adds <5% to total energy deposition at 10 keV).
+// ===========================================================================
+const SEC_SHADER=`
+struct SP{
+  n:u32,box:f32,ce:f32,vc:u32,
+  max_rad:u32,dna_enable:u32,dna_grid_n:u32,_pad2:u32,
+  dna_rise:f32,dna_spacing:f32,dna_x0:f32,dna_r_bb:f32,
+};
+struct Particle{pos_E:vec4<f32>,dir_alive:vec4<f32>,rng:vec4<u32>};
+
+@group(0)@binding(0) var<uniform> sp:SP;
+@group(0)@binding(1) var<storage,read_write> sec_buf:array<Particle>;
+@group(0)@binding(2) var<storage,read_write> sec_stats:array<atomic<u32>>;
+@group(0)@binding(3) var<storage,read_write> dose:array<atomic<u32>>;
+// Shared counters with primary: slots [0]OH, [1]eaq, [2]H, [3]H3O+, [6]sec_idx, [7]rad_idx
+@group(0)@binding(4) var<storage,read_write> counters:array<atomic<u32>>;
+// Radical position buffer (same as primary)
+@group(0)@binding(5) var<storage,read_write> rad_buf:array<vec4<f32>>;
+
+// Meesungnoen2002: electron thermalization penetration → 1D Gaussian sigma (nm)
+fn meesungnoen_sigma(k:f32)->f32{
+  if(k<=0.1){return 0.0;}
+  var r=-4.06217193e-08;
+  r=r*k+3.06848412e-06;r=r*k-9.93217814e-05;r=r*k+1.80172797e-03;
+  r=r*k-2.01135480e-02;r=r*k+1.42939448e-01;r=r*k-6.48348714e-01;
+  r=r*k+1.85227848e+00;r=r*k-3.36450378e+00;r=r*k+4.37785068e+00;
+  r=r*k-4.20557339e+00;r=r*k+3.81679083e+00;r=r*k-2.34069784e-01;
+  return max(r,0.0)*0.6267;
+}
+
+// Same deposit() as primary — WGSL doesn't let us share non-helper fns between
+// compiled modules cleanly, so we duplicate. (Move to HELPERS if this pattern
+// grows.) Dose stored in fixed point: 100 units = 1 eV.
+fn deposit(px:f32,py:f32,pz:f32,dep_eV:f32,box:f32,vc:u32){
+  if(dep_eV<=0.0){return;}
+  let vs=2.0*box/f32(vc);
+  let ix=i32(floor((px+box)/vs));
+  let iy=i32(floor((py+box)/vs));
+  let iz=i32(floor((pz+box)/vs));
+  let n=i32(vc);
+  if(ix<0||ix>=n||iy<0||iy>=n||iz<0||iz>=n){return;}
+  let vi=u32((iz*n+iy)*n+ix);
+  atomicAdd(&dose[vi],u32(dep_eV*100.0));
+}
+// Secondary-shader DNA hit check — same as primary dna_near but uses sp.
+fn dna_near_sec(px:f32,py:f32,pz:f32)->u32{
+  if(sp.dna_enable==0u){return 0u;}
+  let r_damage:f32=0.29;
+  let N=sp.dna_grid_n;
+  let spacing=sp.dna_spacing;
+  let grid_off = -(f32(N-1u)*spacing)*0.5;
+  let inv_s = 1.0/spacing;
+  let fi = i32(round((py - grid_off) * inv_s));
+  let fj = i32(round((pz - grid_off) * inv_s));
+  if(fi<0 || fi>=i32(N) || fj<0 || fj>=i32(N)){return 0u;}
+  let fy = grid_off + f32(fi)*spacing;
+  let fz = grid_off + f32(fj)*spacing;
+  let y_rel = py - fy;
+  let z_rel = pz - fz;
+  let r2 = y_rel*y_rel + z_rel*z_rel;
+  let R_reach = sp.dna_r_bb + r_damage;
+  if(r2 > R_reach*R_reach){return 0u;}
+  let bp_est = i32(round((px - sp.dna_x0)/sp.dna_rise));
+  let b0 = max(0,bp_est-1);
+  let b1 = bp_est+1;
+  let d_phase = 2.0*PI/10.5;
+  let r_bb = sp.dna_r_bb;
+  for(var b:i32=b0;b<=b1;b=b+1){
+    let bx = sp.dna_x0 + f32(b)*sp.dna_rise;
+    let phi = f32(b)*d_phase;
+    let s0y = r_bb*cos(phi);
+    let s0z = r_bb*sin(phi);
+    let dx = px - bx;
+    let dy0 = y_rel - s0y;
+    let dz0 = z_rel - s0z;
+    if(dx*dx + dy0*dy0 + dz0*dz0 < r_damage*r_damage){return 1u;}
+    let s1y = r_bb*cos(phi+PI);
+    let s1z = r_bb*sin(phi+PI);
+    let dy1 = y_rel - s1y;
+    let dz1 = z_rel - s1z;
+    if(dx*dx + dy1*dy1 + dz1*dz1 < r_damage*r_damage){return 1u;}
+  }
+  return 0u;
+}
+@compute @workgroup_size(256)
+fn step(@builtin(global_invocation_id) gid:vec3u){
+  let idx=gid.x;
+  if(idx>=sp.n){return;}
+  var particle=sec_buf[idx];
+  if(particle.dir_alive.w<0.5){return;}  // dead
+  let parent_pid=f32(u32(particle.dir_alive.w)-1u)*8.0;
+
+  var px=particle.pos_E.x;
+  var py=particle.pos_E.y;
+  var pz=particle.pos_E.z;
+  var E =particle.pos_E.w;
+  var dx=particle.dir_alive.x;
+  var dy=particle.dir_alive.y;
+  var dz=particle.dir_alive.z;
+  var s =particle.rng;
+
+  // Termination checks
+  if(E<sp.ce){
+    // Deposit residual energy at final position (thermalized)
+    deposit(px,py,pz,E,sp.box,sp.vc);
+    // Create eaq at thermalization position with Meesungnoen displacement.
+    // This electron was deferred from primary ionization — eaq appears HERE,
+    // not at the ionization site, matching Geant4-DNA convention.
+    atomicAdd(&counters[1],1u);  // e-aq count
+    let eaq_s=meesungnoen_sigma(E);
+    var epx=px;var epy=py;var epz=pz;
+    if(eaq_s>0.0){
+      let eu1=max(rf(&s),1e-30);let eu2=rf(&s);
+      let er=sqrt(-2.0*log(eu1))*eaq_s;
+      epx+=er*cos(6.2831853*eu2);epy+=er*sin(6.2831853*eu2);
+      let eu3=max(rf(&s),1e-30);let eu4=rf(&s);
+      epz+=sqrt(-2.0*log(eu3))*eaq_s*cos(6.2831853*eu4);
+    }
+    let re=atomicAdd(&counters[7],1u);
+    if(re<sp.max_rad){
+      rad_buf[re]=vec4<f32>(epx,epy,epz,5.0+parent_pid); // species=5: pre-thermalized eaq
+    }
+    particle.dir_alive.w=0.0;
+    sec_buf[idx]=particle;
+    atomicAdd(&sec_stats[1],1u);  // terminated via cutoff
+    return;
+  }
+  if(abs(px)>=sp.box||abs(py)>=sp.box||abs(pz)>=sp.box){
+    particle.dir_alive.w=0.0;
+    sec_buf[idx]=particle;
+    atomicAdd(&sec_stats[2],1u);  // terminated via bounds
+    return;
+  }
+
+  // One physics step
+  let xs=xs_all(E);
+  let s_vib=xs_vib_total(E);
+  let s_dea=xs_dea(E);
+  let s_tot=xs.x+xs.y+xs.z+s_vib+s_dea;
+  if(s_tot<=0.0){
+    particle.dir_alive.w=0.0;
+    sec_buf[idx]=particle;
+    return;
+  }
+
+  let lambda=1.0/(NW*s_tot);
+  let dist=-log(max(rf(&s),1e-10))*lambda;
+
+  // Elastic scatter angle (Champion tabulated CDF)
+  let r_el=rf(&s);
+  let cos_el=xs_el_cos(E,r_el);
+  let sin_el=sqrt(max(0.0,1.0-cos_el*cos_el));
+  let phi_el=2.0*PI*rf(&s);let cp=cos(phi_el);let sp_phi=sin(phi_el);
+  if(abs(dz)>0.99999){
+    let sw=select(-1.0,1.0,dz>0.0);
+    dx=sin_el*cp;dy=sin_el*sp_phi*sw;dz=cos_el*sw;
+  }else{
+    let q=sqrt(1.0-dz*dz);
+    let inv=1.0/q;
+    let nx=dx*cos_el+sin_el*(dx*dz*cp-dy*sp_phi)*inv;
+    let ny=dy*cos_el+sin_el*(dy*dz*cp+dx*sp_phi)*inv;
+    let nz=dz*cos_el-q*sin_el*cp;
+    let len=sqrt(nx*nx+ny*ny+nz*nz);
+    dx=nx/len;dy=ny/len;dz=nz/len;
+  }
+
+  px+=dx*dist;py+=dy*dist;pz+=dz*dist;
+  atomicAdd(&sec_stats[3],1u);  // total steps taken
+
+  // Event type sampling
+  let r_type=rf(&s)*s_tot;
+  if(r_type<xs.x&&E>SB[0]){
+    // Ionization (tertiary secondary NOT emitted; absorbed in place)
+    let sf=xs_shell_fracs(E);
+    let fsum=max(sf[0]+sf[1]+sf[2]+sf[3]+sf[4],1e-12);
+    let r_sh=rf(&s)*fsum;
+    var bind:f32=SB[0];
+    var shell_idx:u32=0u;
+    if(r_sh<sf[0]){bind=SB[0];shell_idx=0u;}
+    else if(r_sh<sf[0]+sf[1]){bind=SB[1];shell_idx=1u;}
+    else if(r_sh<sf[0]+sf[1]+sf[2]){bind=SB[2];shell_idx=2u;}
+    else if(r_sh<sf[0]+sf[1]+sf[2]+sf[3]){bind=SB[3];shell_idx=3u;}
+    else{bind=SB[4];shell_idx=4u;}
+    if(E>bind){
+      // Born CDF returns total transfer (bind + sec_KE), same as primary
+      let r_w=rf(&s);
+      let W_transfer_max=(E+bind)*0.5;
+      var W_transfer=sample_W_sec(E,shell_idx,r_w);
+      W_transfer=clamp(W_transfer,bind,W_transfer_max);
+      let W_sec=max(W_transfer-bind,0.0);
+      E-=W_transfer;  // secondary loses total transfer
+      atomicAdd(&sec_stats[4],1u);  // tertiary ionizations (absorbed)
+      // Tertiary is absorbed in place, so total transfer deposits here.
+      deposit(px,py,pz,W_transfer,sp.box,sp.vc);
+      // Mother displacement for H2O+ products (RMS=2nm)
+      let ms_s=1.1547005;
+      let ms1=max(rf(&s),1e-30);let ms2=rf(&s);
+      let msr=sqrt(-2.0*log(ms1))*ms_s;
+      let msdx=msr*cos(6.2831853*ms2);let msdy=msr*sin(6.2831853*ms2);
+      let ms3=max(rf(&s),1e-30);let ms4=rf(&s);
+      let msdz=sqrt(-2.0*log(ms3))*ms_s*cos(6.2831853*ms4);
+      let spx=px+msdx;let spy=py+msdy;let spz=pz+msdz;
+      // Meesungnoen thermalization for the tertiary eaq
+      let eaq_s_t=meesungnoen_sigma(W_sec);
+      var epx_t=px;var epy_t=py;var epz_t=pz;
+      if(eaq_s_t>0.0){
+        let eu1=max(rf(&s),1e-30);let eu2=rf(&s);
+        let er=sqrt(-2.0*log(eu1))*eaq_s_t;
+        epx_t+=er*cos(6.2831853*eu2);epy_t+=er*sin(6.2831853*eu2);
+        let eu3=max(rf(&s),1e-30);let eu4=rf(&s);
+        epz_t+=sqrt(-2.0*log(eu3))*eaq_s_t*cos(6.2831853*eu4);
+      }
+      // Onsager electron-hole recombination: H2O+ + eaq → H2Ovib → dissoc
+      let rdx_t=epx_t-spx;let rdy_t=epy_t-spy;let rdz_t=epz_t-spz;
+      let r_sep_t=max(sqrt(rdx_t*rdx_t+rdy_t*rdy_t+rdz_t*rdz_t),1e-6);
+      let r_onsager_t:f32=0.711;
+      let p_recomb_t=1.0-exp(-r_onsager_t/r_sep_t);
+      let r_recomb_t=rf(&s);
+      if(r_recomb_t<p_recomb_t){
+        let r_vd=rf(&s);
+        if(r_vd<0.1365){
+          atomicAdd(&counters[0],2u);
+          atomicAdd(&counters[5],1u);
+          let ri=atomicAdd(&counters[7],3u);
+          if(ri+2u<sp.max_rad){
+            rad_buf[ri]   =vec4<f32>(spx,spy,spz,0.0+parent_pid);
+            rad_buf[ri+1u]=vec4<f32>(spx,spy,spz,0.0+parent_pid);
+            rad_buf[ri+2u]=vec4<f32>(spx,spy,spz,7.0+parent_pid);
+          }
+        }else if(r_vd<0.494){
+          atomicAdd(&counters[0],1u);
+          atomicAdd(&counters[2],1u);
+          let ri=atomicAdd(&counters[7],2u);
+          if(ri+1u<sp.max_rad){
+            rad_buf[ri]   =vec4<f32>(spx,spy,spz,0.0+parent_pid);
+            rad_buf[ri+1u]=vec4<f32>(spx,spy,spz,2.0+parent_pid);
+          }
+        }else if(r_vd<0.650){
+          atomicAdd(&counters[2],2u);
+          let ri=atomicAdd(&counters[7],2u);
+          if(ri+1u<sp.max_rad){
+            rad_buf[ri]   =vec4<f32>(spx,spy,spz,2.0+parent_pid);
+            rad_buf[ri+1u]=vec4<f32>(spx,spy,spz,2.0+parent_pid);
+          }
+        }
+        // else: 35% relaxation, no products
+      }else{
+        // Normal pre-chem: OH + H3O+ + eaq
+        atomicAdd(&counters[0],1u);
+        atomicAdd(&counters[1],1u);
+        atomicAdd(&counters[3],1u);
+        let ri=atomicAdd(&counters[7],3u);
+        if(ri+2u<sp.max_rad){
+          rad_buf[ri]   =vec4<f32>(spx,spy,spz,0.0+parent_pid);
+          rad_buf[ri+1u]=vec4<f32>(epx_t,epy_t,epz_t,5.0+parent_pid); // species=5: pre-therm eaq
+          rad_buf[ri+2u]=vec4<f32>(spx,spy,spz,3.0+parent_pid);
+        }
+      }
+      // Secondary kernel-level DNA hit check
+      if(dna_near_sec(px,py,pz)==1u){atomicAdd(&counters[4],1u);}
+    }
+  }else if(r_type<xs.x+xs.y){
+    // Electronic excitation (Born, data-driven fractions — same as primary)
+    let ef=xs_exc_fracs(E);
+    let efsum=max(ef[0]+ef[1]+ef[2]+ef[3]+ef[4],1e-12);
+    let r_ex=rf(&s)*efsum;
+    var exc_E:f32;
+    var exc_lvl:u32;
+    if(r_ex<ef[0]){exc_E=EX[0];exc_lvl=0u;}
+    else if(r_ex<ef[0]+ef[1]){exc_E=EX[1];exc_lvl=1u;}
+    else if(r_ex<ef[0]+ef[1]+ef[2]){exc_E=EX[2];exc_lvl=2u;}
+    else if(r_ex<ef[0]+ef[1]+ef[2]+ef[3]){exc_E=EX[3];exc_lvl=3u;}
+    else{exc_E=EX[4];exc_lvl=4u;}
+    let dep=min(exc_E,E);
+    E-=dep;
+    deposit(px,py,pz,dep,sp.box,sp.vc);
+    // Same branching as primary (G4ChemDissociationChannels)
+    let r_ch=rf(&s);
+    if(exc_lvl==0u){
+      if(r_ch<0.65){
+        atomicAdd(&counters[0],1u);atomicAdd(&counters[2],1u);
+        let re=atomicAdd(&counters[7],2u);
+        if(re+1u<sp.max_rad){rad_buf[re]=vec4<f32>(px,py,pz,0.0+parent_pid);rad_buf[re+1u]=vec4<f32>(px,py,pz,2.0+parent_pid);}
+      }
+    }else if(exc_lvl==1u){
+      // B1A1 — 5 channels from G4ChemDissociationChannels_option1 (cumulative)
+      if(r_ch<0.175){
+        // 17.5% relaxation, no products
+      }else if(r_ch<0.2075){
+        // 3.25% B1A1 → 2OH + H2 (H2 marker code 7 in rad_buf)
+        atomicAdd(&counters[0],2u);
+        atomicAdd(&counters[5],1u);
+        let re=atomicAdd(&counters[7],3u);
+        if(re+2u<sp.max_rad){
+          rad_buf[re]   =vec4<f32>(px,py,pz,0.0+parent_pid);
+          rad_buf[re+1u]=vec4<f32>(px,py,pz,0.0+parent_pid);
+          rad_buf[re+2u]=vec4<f32>(px,py,pz,7.0+parent_pid);
+        }
+      }else if(r_ch<0.7075){
+        // 50% B1A1 autoionization → OH + H3O+ + eaq (mother disp RMS=2nm).
+        // Geant4 DNA: H2O+ created here ALSO undergoes G4DNAElectronHoleRecombination
+        // with the emitted eaq. Same treatment as primary shader.
+        let msb=1.1547005;let msb1=max(rf(&s),1e-30);let msb2=rf(&s);
+        let msbr=sqrt(-2.0*log(msb1))*msb;let msbdx=msbr*cos(6.2831853*msb2);let msbdy=msbr*sin(6.2831853*msb2);
+        let msb3=max(rf(&s),1e-30);let msb4=rf(&s);let msbdz=sqrt(-2.0*log(msb3))*msb*cos(6.2831853*msb4);
+        let sbpx=px+msbdx;let sbpy=py+msbdy;let sbpz=pz+msbdz;
+        let eaq_s_sb=meesungnoen_sigma(1.7);
+        var sbex=sbpx;var sbey=sbpy;var sbez=sbpz;
+        if(eaq_s_sb>0.0){
+          let sab1=max(rf(&s),1e-30);let sab2=rf(&s);
+          let sabr=sqrt(-2.0*log(sab1))*eaq_s_sb;
+          sbex+=sabr*cos(6.2831853*sab2);sbey+=sabr*sin(6.2831853*sab2);
+          let sab3=max(rf(&s),1e-30);let sab4=rf(&s);
+          sbez+=sqrt(-2.0*log(sab3))*eaq_s_sb*cos(6.2831853*sab4);
+        }
+        let sabdx=sbex-sbpx;let sabdy=sbey-sbpy;let sabdz=sbez-sbpz;
+        let sabr_sep=max(sqrt(sabdx*sabdx+sabdy*sabdy+sabdz*sabdz),1e-6);
+        let sab_onsager:f32=0.711;
+        let sabp_recomb=1.0-exp(-sab_onsager/sabr_sep);
+        let sabrr=rf(&s);
+        if(sabrr<sabp_recomb){
+          let sabvd=rf(&s);
+          if(sabvd<0.1365){
+            atomicAdd(&counters[0],2u);
+            atomicAdd(&counters[5],1u);
+            let sabri=atomicAdd(&counters[7],3u);
+            if(sabri+2u<sp.max_rad){
+              rad_buf[sabri]   =vec4<f32>(sbpx,sbpy,sbpz,0.0+parent_pid);
+              rad_buf[sabri+1u]=vec4<f32>(sbpx,sbpy,sbpz,0.0+parent_pid);
+              rad_buf[sabri+2u]=vec4<f32>(sbpx,sbpy,sbpz,7.0+parent_pid);
+            }
+          }else if(sabvd<0.494){
+            atomicAdd(&counters[0],1u);
+            atomicAdd(&counters[2],1u);
+            let sabri=atomicAdd(&counters[7],2u);
+            if(sabri+1u<sp.max_rad){
+              rad_buf[sabri]   =vec4<f32>(sbpx,sbpy,sbpz,0.0+parent_pid);
+              rad_buf[sabri+1u]=vec4<f32>(sbpx,sbpy,sbpz,2.0+parent_pid);
+            }
+          }else if(sabvd<0.650){
+            atomicAdd(&counters[2],2u);
+            let sabri=atomicAdd(&counters[7],2u);
+            if(sabri+1u<sp.max_rad){
+              rad_buf[sabri]   =vec4<f32>(sbpx,sbpy,sbpz,2.0+parent_pid);
+              rad_buf[sabri+1u]=vec4<f32>(sbpx,sbpy,sbpz,2.0+parent_pid);
+            }
+          }
+          // else 35% relax
+        }else{
+          atomicAdd(&counters[0],1u);atomicAdd(&counters[1],1u);atomicAdd(&counters[3],1u);
+          let re=atomicAdd(&counters[7],3u);
+          if(re+2u<sp.max_rad){rad_buf[re]=vec4<f32>(sbpx,sbpy,sbpz,0.0+parent_pid);rad_buf[re+1u]=vec4<f32>(sbex,sbey,sbez,1.0+parent_pid);rad_buf[re+2u]=vec4<f32>(sbpx,sbpy,sbpz,3.0+parent_pid);}
+        }
+      }else if(r_ch<0.961){
+        // 25.35% B1A1 → OH + H
+        atomicAdd(&counters[0],1u);atomicAdd(&counters[2],1u);
+        let re=atomicAdd(&counters[7],2u);
+        if(re+1u<sp.max_rad){rad_buf[re]=vec4<f32>(px,py,pz,0.0+parent_pid);rad_buf[re+1u]=vec4<f32>(px,py,pz,2.0+parent_pid);}
+      }else{
+        // 3.9% B1A1 → 2H + O (O not tracked, emit 2 H only)
+        atomicAdd(&counters[2],2u);
+        let re=atomicAdd(&counters[7],2u);
+        if(re+1u<sp.max_rad){rad_buf[re]=vec4<f32>(px,py,pz,2.0+parent_pid);rad_buf[re+1u]=vec4<f32>(px,py,pz,2.0+parent_pid);}
+      }
+    }else{
+      if(r_ch<0.50){
+        // Levels 2-4 autoionization (mother disp RMS=2nm).
+        // Geant4 DNA: H2O+ undergoes G4DNAElectronHoleRecombination with the
+        // emitted eaq. Same treatment as primary shader.
+        let msh=1.1547005;let msh1=max(rf(&s),1e-30);let msh2=rf(&s);
+        let mshr=sqrt(-2.0*log(msh1))*msh;let mshdx=mshr*cos(6.2831853*msh2);let mshdy=mshr*sin(6.2831853*msh2);
+        let msh3=max(rf(&s),1e-30);let msh4=rf(&s);let mshdz=sqrt(-2.0*log(msh3))*msh*cos(6.2831853*msh4);
+        let shpx=px+mshdx;let shpy=py+mshdy;let shpz=pz+mshdz;
+        let eaq_s_sh=meesungnoen_sigma(1.7);
+        var shex=shpx;var shey=shpy;var shez=shpz;
+        if(eaq_s_sh>0.0){
+          let sah1=max(rf(&s),1e-30);let sah2=rf(&s);
+          let sahr=sqrt(-2.0*log(sah1))*eaq_s_sh;
+          shex+=sahr*cos(6.2831853*sah2);shey+=sahr*sin(6.2831853*sah2);
+          let sah3=max(rf(&s),1e-30);let sah4=rf(&s);
+          shez+=sqrt(-2.0*log(sah3))*eaq_s_sh*cos(6.2831853*sah4);
+        }
+        let sahdx=shex-shpx;let sahdy=shey-shpy;let sahdz=shez-shpz;
+        let sahr_sep=max(sqrt(sahdx*sahdx+sahdy*sahdy+sahdz*sahdz),1e-6);
+        let sah_onsager:f32=0.711;
+        let sahp_recomb=1.0-exp(-sah_onsager/sahr_sep);
+        let sahrr=rf(&s);
+        if(sahrr<sahp_recomb){
+          let sahvd=rf(&s);
+          if(sahvd<0.1365){
+            atomicAdd(&counters[0],2u);
+            atomicAdd(&counters[5],1u);
+            let sahri=atomicAdd(&counters[7],3u);
+            if(sahri+2u<sp.max_rad){
+              rad_buf[sahri]   =vec4<f32>(shpx,shpy,shpz,0.0+parent_pid);
+              rad_buf[sahri+1u]=vec4<f32>(shpx,shpy,shpz,0.0+parent_pid);
+              rad_buf[sahri+2u]=vec4<f32>(shpx,shpy,shpz,7.0+parent_pid);
+            }
+          }else if(sahvd<0.494){
+            atomicAdd(&counters[0],1u);
+            atomicAdd(&counters[2],1u);
+            let sahri=atomicAdd(&counters[7],2u);
+            if(sahri+1u<sp.max_rad){
+              rad_buf[sahri]   =vec4<f32>(shpx,shpy,shpz,0.0+parent_pid);
+              rad_buf[sahri+1u]=vec4<f32>(shpx,shpy,shpz,2.0+parent_pid);
+            }
+          }else if(sahvd<0.650){
+            atomicAdd(&counters[2],2u);
+            let sahri=atomicAdd(&counters[7],2u);
+            if(sahri+1u<sp.max_rad){
+              rad_buf[sahri]   =vec4<f32>(shpx,shpy,shpz,2.0+parent_pid);
+              rad_buf[sahri+1u]=vec4<f32>(shpx,shpy,shpz,2.0+parent_pid);
+            }
+          }
+          // else 35% relax
+        }else{
+          atomicAdd(&counters[0],1u);atomicAdd(&counters[1],1u);atomicAdd(&counters[3],1u);
+          let re=atomicAdd(&counters[7],3u);
+          if(re+2u<sp.max_rad){rad_buf[re]=vec4<f32>(shpx,shpy,shpz,0.0+parent_pid);rad_buf[re+1u]=vec4<f32>(shex,shey,shez,1.0+parent_pid);rad_buf[re+2u]=vec4<f32>(shpx,shpy,shpz,3.0+parent_pid);}
+        }
+      }
+    }
+    if(dna_near_sec(px,py,pz)==1u){atomicAdd(&counters[4],1u);}
+  }else if(r_type<xs.x+xs.y+s_vib){
+    // Sanche vibrational excitation (energy deposit only, no molecular products).
+    // G4DNASancheExcitationModel only proposes ProposeLocalEnergyDeposit —
+    // H2Ovib dissociation is handled by G4DNAElectronHoleRecombination at the
+    // ionization site, not here.
+    let mode=sample_vib_mode(E,rf(&s));
+    let dep=min(VIB_LEV[mode],E);
+    E-=dep;
+    deposit(px,py,pz,dep,sp.box,sp.vc);
+  }else if(r_type<xs.x+xs.y+s_vib+s_dea){
+    // Melton DEA (G4ChemDissociationChannels_option1 DissociAttachment_ch1):
+    // e⁻ + H₂O → H₂ + OH⁻ + OH (electron captured, full deposit)
+    deposit(px,py,pz,E,sp.box,sp.vc);
+    atomicAdd(&counters[0],1u);  // OH
+    atomicAdd(&counters[5],1u);  // initial H2
+    let re=atomicAdd(&counters[7],3u);
+    if(re+2u<sp.max_rad){
+      rad_buf[re]   =vec4<f32>(px,py,pz,0.0+parent_pid);  // OH
+      rad_buf[re+1u]=vec4<f32>(px,py,pz,6.0+parent_pid);  // OH-
+      rad_buf[re+2u]=vec4<f32>(px,py,pz,7.0+parent_pid);  // H2 marker
+    }
+    E=0.0;
+  }
+  // else: elastic (no energy loss)
+
+  particle.pos_E=vec4<f32>(px,py,pz,E);
+  particle.dir_alive=vec4<f32>(dx,dy,dz,particle.dir_alive.w);
+  particle.rng=s;
+  sec_buf[idx]=particle;
+}
+`;
+
+// ===========================================================================
+// CHEMISTRY SHADER (Stage 5 V3a) — diffusion-only kernel for radical species.
+// One dispatch per time step. Each thread moves one radical by a 3D Gaussian
+// of σ = √(2·D·dt), with D depending on species kind (OH/e-aq/H).
+// Reactions are NOT yet included — this shader validates the diffusion
+// pipeline before layering on reaction sampling in V3b.
+// ===========================================================================
+const CHEM_SHADER=`
+struct CU{n:u32,dt:f32,stride:u32,rxn_mode:u32}; // rxn_mode: 0=all except eaq+H3O+, 1=eaq+H3O+ only
+
+@group(0)@binding(0) var<uniform> cu:CU;
+@group(0)@binding(1) var<storage,read_write> chem_pos:array<vec4<f32>>;
+@group(0)@binding(2) var<storage,read_write> chem_alive:array<atomic<u32>>;
+@group(0)@binding(3) var<storage,read_write> chem_rng:array<vec4u>;
+// Self-test accumulators (Float64 precision via two u32 slots per species):
+//   [0..5]  sum(Δr² × 1e3) fixed point, 3 species × 2 slots
+//   [6..8]  live count per species
+//   [9]     total step count (debug)
+@group(0)@binding(4) var<storage,read_write> chem_stats:array<atomic<u32>>;
+
+const PI=3.14159265;
+const D_OH=2.2;   // nm²/ns (Geant4: 2.8e-9 m²/s → 2.8 nm²/ns; using Karamitros value)
+const D_EAQ=4.9;
+const D_H=7.0;
+const D_H3O=9.0;  // nm²/ns (Geant4: 9.0e-9 m²/s)
+
+fn rl(x:u32,k:u32)->u32{return(x<<k)|(x>>(32u-k));}
+fn rn(s:ptr<function,vec4u>)->u32{let r=rl((*s).x+(*s).w,7u)+(*s).x;let t=(*s).y<<9u;(*s).z^=(*s).x;(*s).w^=(*s).y;(*s).y^=(*s).z;(*s).x^=(*s).w;(*s).z^=t;(*s).w=rl((*s).w,11u);return r;}
+fn rf(s:ptr<function,vec4u>)->f32{return f32(rn(s)>>1u)/2147483647.0;}
+
+// Gaussian pair via Box-Muller, returns (g1, g2)
+fn gauss2(s:ptr<function,vec4u>)->vec2<f32>{
+  let u1=max(rf(s),1e-10);
+  let u2=rf(s);
+  let r=sqrt(-2.0*log(u1));
+  return vec2<f32>(r*cos(2.0*PI*u2),r*sin(2.0*PI*u2));
+}
+
+@compute @workgroup_size(256)
+fn diffuse(@builtin(global_invocation_id) gid:vec3u){
+  let idx=gid.x;
+  if(idx>=cu.n){return;}
+  if(atomicLoad(&chem_alive[idx])==0u){return;}
+  var pk=chem_pos[idx];
+  // kind encoded as f32 in .w: 0=OH, 1=eaq, 2=H, 3=H3O+
+  let kind=i32(round(pk.w));
+  var D:f32=D_OH;
+  if(kind==1){D=D_EAQ;}
+  else if(kind==2){D=D_H;}
+  else if(kind==3){D=D_H3O;}
+  else if(kind!=0){return;}  // unknown species — skip
+
+  let sigma=sqrt(2.0*D*cu.dt);
+  var s=chem_rng[idx];
+  let g01=gauss2(&s);
+  let g23=gauss2(&s);
+  let dx=sigma*g01.x;
+  let dy=sigma*g01.y;
+  let dz=sigma*g23.x;
+  pk.x+=dx;
+  pk.y+=dy;
+  pk.z+=dz;
+  chem_pos[idx]=pk;
+  chem_rng[idx]=s;
+}
+
+// Radical source buffer for strided sampling at chemistry start.
+@group(0)@binding(5) var<storage,read> rad_buf_src:array<vec4<f32>>;
+// Spatial hash: cell_head[h] is the index of the first radical in bucket h,
+// or -1 if empty. next_idx[i] is the next radical's index in the same bucket.
+@group(0)@binding(6) var<storage,read_write> cell_head:array<atomic<i32>>;
+@group(0)@binding(7) var<storage,read_write> next_idx:array<i32>;
+
+const HASH_SIZE:u32=8388608u;  // 2^23 buckets, 32 MB (16M would exceed
+                               // maxComputeWorkgroupsPerDimension=65535
+                               // at workgroup_size=256 for clear_hash)
+// 1.5 nm cells → 4.5 nm search radius. Tested larger cells (3.0 nm → 9.0 nm
+// search): same G(H2O2)/G(H2) yields, so those under-predictions aren't
+// from missed pair encounters at long dt. They're algorithmic — grid
+// diffusion fundamentally undercounts long-time reactions vs IRT.
+const CELL_SZ:f32=1.5; // 1.5nm cells × 3-layer = 4.5nm search radius
+fn CELL_SIZE()->f32{return CELL_SZ;}
+
+fn hash3(ix:i32,iy:i32,iz:i32)->u32{
+  // Teschner 2003 spatial hash (prime constants)
+  let h:u32=u32(ix*73856093)^u32(iy*19349663)^u32(iz*83492791);
+  return h%HASH_SIZE;
+}
+
+// Strided copy from rad_buf[i * stride] → chem_pos[i]. With stride=1 this
+// is a plain first-N copy. Kept around for future uniform-sampling work.
+@compute @workgroup_size(256)
+fn sample_init(@builtin(global_invocation_id) gid:vec3u){
+  let idx=gid.x;
+  if(idx>=cu.n){return;}
+  let src_idx=idx*cu.stride;
+  chem_pos[idx]=rad_buf_src[src_idx];
+}
+
+// Clear cell_head to -1. Dispatched over HASH_SIZE / 256 workgroups.
+@compute @workgroup_size(256)
+fn clear_hash(@builtin(global_invocation_id) gid:vec3u){
+  let idx=gid.x;
+  if(idx>=HASH_SIZE){return;}
+  atomicStore(&cell_head[idx],-1);
+}
+
+// Build spatial hash: each radical atomically exchanges its own index into
+// its cell's head pointer, chaining the previous head via next_idx.
+@compute @workgroup_size(256)
+fn build_hash(@builtin(global_invocation_id) gid:vec3u){
+  let idx=gid.x;
+  if(idx>=cu.n){return;}
+  if(atomicLoad(&chem_alive[idx])==0u){next_idx[idx]=-1;return;}
+  let p=chem_pos[idx];
+  let ix=i32(floor(p.x/CELL_SIZE()));
+  let iy=i32(floor(p.y/CELL_SIZE()));
+  let iz=i32(floor(p.z/CELL_SIZE()));
+  let h=hash3(ix,iy,iz);
+  let prev=atomicExchange(&cell_head[h],i32(idx));
+  next_idx[idx]=prev;
+}
+
+// ========== PM-IRT: Parallel Mutual-Minimum Independent Reaction Times ==========
+// Novel GPU-native first-passage chemistry. No diffusion — positions fixed.
+// Smoluchowski IRT sampled once per pair. Mutual-minimum matching for
+// conflict-free parallel reaction processing.
+//
+// Geant4 reaction radii (Smoluchowski σ from k/(4πD)):
+//   OH+OH   σ=0.44  → H2O2      OH+eaq  σ=0.57  → OH⁻
+//   OH+H    σ=0.45  → H2O       eaq+eaq σ=0.54  → H2
+//   eaq+H   σ=0.61  → H2        eaq+H3O+σ=0.47  → H (Onsager rc=0.71)
+//   H+H     σ=0.34  → H2
+
+fn react_sigma(ki:i32,kj:i32)->f32{
+  let a=min(ki,kj); let b=max(ki,kj);
+  if(a==0&&b==0){return 0.44;}
+  if(a==0&&b==1){return 0.57;}
+  if(a==0&&b==2){return 0.45;}
+  if(a==1&&b==1){return 0.54;}
+  if(a==1&&b==2){return 0.61;}
+  if(a==1&&b==3){return 0.47;}
+  if(a==2&&b==2){return 0.34;}
+  return 0.0;
+}
+fn react_rc(ki:i32,kj:i32)->f32{
+  let a=min(ki,kj); let b=max(ki,kj);
+  if(a==1&&b==3){return 0.71;}
+  return 0.0;
+}
+fn react_product(ki:i32,kj:i32)->u32{
+  let a=min(ki,kj); let b=max(ki,kj);
+  if(a==0&&b==0){return 1u;}
+  if(a==1&&b==1){return 2u;}
+  if(a==1&&b==2){return 2u;}
+  if(a==1&&b==3){return 3u;}
+  if(a==2&&b==2){return 2u;}
+  return 0u;
+}
+
+// Inverse complementary error function (rational approximation)
+fn erfcinv(x:f32)->f32{
+  if(x<=0.0||x>=2.0){return 0.0;}
+  let p:f32=select(x,2.0-x,x>1.0);
+  let t:f32=sqrt(-2.0*log(max(p*0.5,1e-20)));
+  let c0=2.515517;let c1=0.802853;let c2=0.010328;
+  let d1=1.432788;let d2=0.189269;let d3=0.001308;
+  var y:f32=t-(c0+c1*t+c2*t*t)/(1.0+d1*t+d2*t*t+d3*t*t*t);
+  y=y*0.7071067811865475;
+  return select(y,-y,x>1.0);
+}
+
+// Smoluchowski first-passage time sampling (Geant4 G4DNAIRT port).
+// Smoluchowski first-passage time. Uses thread RNG (one draw per pair per round).
+// Smoluchowski IRT with DETERMINISTIC pair hash.
+// hash(i,j) → same pair always gets same U → exactly one draw per pair.
+// Different pair → different U → fresh chance. No multi-draw inflation.
+fn pair_rand(a:u32,b:u32)->f32{
+  let lo=min(a,b); let hi=max(a,b);
+  var h=lo*2654435761u+hi*340573321u;
+  h^=(h>>16u); h*=0x45d9f3bu; h^=(h>>16u);
+  return f32(h>>1u)/2147483647.0;
+}
+fn sample_irt(r0:f32,sigma:f32,rc:f32,D:f32,idx_i:u32,idx_j:u32)->f32{
+  if(sigma<=0.0||D<=0.0){return 1e30;}
+  if(r0<=sigma){return 0.0;}
+  var r0e:f32=r0;
+  if(rc!=0.0){r0e=-rc/(1.0-exp(rc/r0));}
+  let Winf:f32=sigma/r0e;
+  let U:f32=pair_rand(idx_i,idx_j);
+  if(U<=0.0||U>=Winf){return 1e30;}
+  let ei:f32=erfcinv(r0e*U/sigma);
+  if(abs(ei)<1e-10){return 1e30;}
+  let dr:f32=r0e-sigma;
+  return 0.25*dr*dr/(D*ei*ei);
+}
+
+// Simple contact-based reaction: diffuse → hash → react on contact.
+// No IRT, no deterministic hash, no mutual-minimum matching.
+// Just walk neighbors, check dist < R, roll probability, CAS claim.
+@compute @workgroup_size(256)
+fn react(@builtin(global_invocation_id) gid:vec3u){
+  let i=gid.x;
+  if(i>=cu.n){return;}
+  if(atomicLoad(&chem_alive[i])==0u){return;}
+  let pi=chem_pos[i];
+  let ki=i32(round(pi.w));
+  if(ki<0||ki>3){return;}
+
+  var s=chem_rng[i];
+  let ix=i32(floor(pi.x/CELL_SIZE()));
+  let iy=i32(floor(pi.y/CELL_SIZE()));
+  let iz=i32(floor(pi.z/CELL_SIZE()));
+
+  for(var dz:i32=-1;dz<=1;dz=dz+1){
+    for(var dy:i32=-1;dy<=1;dy=dy+1){
+      for(var dx:i32=-1;dx<=1;dx=dx+1){
+        let h=hash3(ix+dx,iy+dy,iz+dz);
+        var j:i32=atomicLoad(&cell_head[h]);
+        for(var iter:u32=0u;iter<1024u&&j>=0;iter=iter+1u){
+          let ju=u32(j);
+          let jnext=next_idx[ju];
+          if(ju<=i){j=jnext;continue;}
+          if(atomicLoad(&chem_alive[ju])==0u){j=jnext;continue;}
+          let pj=chem_pos[ju];
+          let kj=i32(round(pj.w));
+          if(kj<0||kj>3){j=jnext;continue;}
+
+          let R=react_sigma(ki,kj);
+          if(R<=0.0){j=jnext;continue;}
+          let d=pi.xyz-pj.xyz;
+          let dist2=dot(d,d);
+          if(dist2>R*R){j=jnext;continue;}
+
+          // Contact probability
+          let a=min(ki,kj);let b=max(ki,kj);
+          var pc:f32=0.0;
+          if(a==0&&b==0){pc=0.376;}
+          else if(a==0&&b==1){pc=0.980;}
+          else if(a==0&&b==2){pc=0.511;}
+          else if(a==1&&b==1){pc=0.125;}
+          else if(a==1&&b==2){pc=0.455;}
+          else if(a==1&&b==3){pc=0.538;}
+          else if(a==2&&b==2){pc=0.216;}
+          if(rf(&s)>=pc){j=jnext;continue;}
+
+          let claim_i=atomicCompareExchangeWeak(&chem_alive[i],1u,0u);
+          if(!claim_i.exchanged){chem_rng[i]=s;return;}
+          let claim_j=atomicCompareExchangeWeak(&chem_alive[ju],1u,0u);
+          if(!claim_j.exchanged){atomicStore(&chem_alive[i],1u);j=jnext;continue;}
+
+          let prod=react_product(ki,kj);
+          if(prod==1u){atomicAdd(&chem_stats[3],1u);}
+          else if(prod==2u){atomicAdd(&chem_stats[4],1u);}
+          else if(prod==3u){
+            if(ki==1){var p=chem_pos[i];p.w=2.0;chem_pos[i]=p;atomicStore(&chem_alive[i],1u);}
+            else{var p=chem_pos[ju];p.w=2.0;chem_pos[ju]=p;atomicStore(&chem_alive[ju],1u);}
+          }
+          chem_rng[i]=s;
+          return;
+        }
+      }
+    }
+  }
+  chem_rng[i]=s;
+}
+
+// match_react stub (unused in diffusion mode, needed for pipeline)
+@compute @workgroup_size(256)
+fn match_react(@builtin(global_invocation_id) gid:vec3u){}
+
+// Count alive radicals per species into chem_stats[0..2]. JS zeros those
+// slots before dispatch, reads back after. Call once per checkpoint.
+@compute @workgroup_size(256)
+fn count_alive(@builtin(global_invocation_id) gid:vec3u){
+  let idx=gid.x;
+  if(idx>=cu.n){return;}
+  if(atomicLoad(&chem_alive[idx])==0u){return;}
+  let kind=i32(round(chem_pos[idx].w));
+  if(kind<0||kind>3){return;}
+  if(kind<=2){atomicAdd(&chem_stats[u32(kind)],1u);}
+  // H3O+ (kind=3) not counted in G-value stats — it's an intermediate
+}
+
+// Pre-chemistry thermalization: apply species-specific Gaussian offsets to
+// each radical's initial position. In Geant4-DNA:
+//   e⁻aq: hot electron diffuses several nm before hydrating (~6 nm RMS)
+//   OH•:  small recoil from H3O+ decomposition (~0.3 nm)
+//   H•:   from dissociative excitation, small offset (~0.3 nm)
+// Without this step, OH and e⁻aq born at the same coordinate from a single
+// ionization react immediately (pc~0.98), annihilating e⁻aq completely.
+@compute @workgroup_size(256)
+fn init_thermal(@builtin(global_invocation_id) gid:vec3u){
+  let idx=gid.x;
+  if(idx>=cu.n){return;}
+  if(atomicLoad(&chem_alive[idx])==0u){return;}
+  var p=chem_pos[idx];
+  var kind=i32(round(p.w));
+  var s=chem_rng[idx];
+  // Geant4 G4DNAWaterDissociationDisplacer: Gaussian with sigma_1D per axis
+  // gauss2() returns N(0,1), so sigma values here = per-axis std directly.
+  var sigma:f32=0.0;
+  if(kind==0){sigma=0.462;}      // OH: RMS=0.8nm, sigma_1D=0.8/sqrt(3)
+  else if(kind==1){sigma=1.764;} // eaq: Meesungnoen2002 at ke=1.7eV, r_mean=2.815nm
+  else if(kind==2){sigma=1.309;} // H: A1B1, 17/18 * 2.4/sqrt(3)
+  else if(kind==3){              // H3O+: 50% displaced, 50% at origin
+    if(rf(&s)<0.5){sigma=0.462;}else{sigma=0.0;}
+  }
+  else{return;}
+  // eaq + H3O+ → H + H2O is a diffusion-controlled reaction in Geant4
+  // (k=2.11e10 L/mol/s), NOT a prompt pre-chemistry step. Removing the
+  // fake V3g Bernoulli conversion. The reaction will be handled by the
+  // chemistry stage once H3O+ is tracked as a diffusing species.
+  // For now, without H3O+ tracking, this reaction is missing — G(eaq)
+  // will be slightly high and G(H) slightly low vs Karamitros.
+  if(false){
+    if(rf(&s)<0.0){
+      kind=2;        // disabled: was fake V3g conversion
+      sigma=0.3;     // H thermalization distance
+    }
+  }
+  let g01=gauss2(&s);
+  let g23=gauss2(&s);
+  p.x=p.x+sigma*g01.x;
+  p.y=p.y+sigma*g01.y;
+  p.z=p.z+sigma*g23.x;
+  p.w=f32(kind);  // persist possibly-changed species
+  chem_pos[idx]=p;
+  chem_rng[idx]=s;
+}
+`;
+
+// ===========================================================================
+// NIST ESTAR Liquid Water (ρ=1 g/cm³) — reference CSDA range & collision dE/dx
+// Source: https://physics.nist.gov/cgi-bin/Star/e_table.pl (Liquid Water)
+// Columns: E (eV) → CSDA range (nm), collision stopping power (eV/nm)
+// Values interpolated from ESTAR tables at the shown energies.
+// ===========================================================================
+const ESTAR = [
+  // Energy (eV), CSDA range (nm), stopping power (eV/nm)
+  // Values from NIST ESTAR (liquid water density 1.0 g/cm³).
+  // Geant4-DNA Emfietzoglou deviates below ~1 keV (liquid-phase correction).
+  {E: 100,   csda: 2.4,    sp: 58.0},
+  {E: 300,   csda: 9.5,    sp: 35.0},
+  {E: 500,   csda: 16.8,   sp: 23.4},
+  {E: 1000,  csda: 48.2,   sp: 12.1},
+  {E: 3000,  csda: 293,    sp: 5.18},
+  {E: 5000,  csda: 685,    sp: 3.81},
+  {E: 10000, csda: 2515,   sp: 2.29},
+  {E: 20000, csda: 8570,   sp: 1.33}   // 8.57 μm CSDA — fits in default 30 μm box
+  // 50 keV CSDA is 42.7 μm which exceeds the default box half-width. To test
+  // at 50 keV, bump the UI box slider to 50000 (100 μm cube).
+];
+
+// ===========================================================================
+// DRIVER
+// ===========================================================================
+const $ = id => document.getElementById(id);
+let G = {dev: null, pipe: null, pb: null, res: null, res_rb: null, rng: null, dbg: null, dbg_rb: null, bg: null, np: 0};
+
+function lg(msg, cls='') {
+  const d = $('log'); const p = document.createElement('div');
+  if (cls) p.className = cls;
+  const t = new Date().toTimeString().slice(0,8);
+  p.textContent = `[${t}] ${msg}`;
+  d.appendChild(p);
+  d.scrollTop = d.scrollHeight;
+}
+
+async function initGPU() {
+  if (!navigator.gpu) { $('nw').classList.add('show'); return false; }
+  const adapter = await navigator.gpu.requestAdapter();
+  if (!adapter) { $('nw').classList.add('show'); return false; }
+  // Request the adapter's max buffer / storage-buffer limits — WebGPU
+  // defaults cap maxStorageBufferBindingSize at 128 MiB, which is too
+  // small for our 192 MB rad_buf at N=16384.
+  G.dev = await adapter.requestDevice({
+    requiredLimits: {
+      maxBufferSize: adapter.limits.maxBufferSize,
+      maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
+    }
+  });
+  lg('GPU initialized: ' + (adapter.info?.description || 'default adapter'), 'ok');
+  return true;
+}
+
+// Secondary buffer capacity. 5M × 48 bytes = 240 MB (within WebGPU 256 MB
+// maxBufferSize limit). Dropped events are counted and reported.
+const MAX_SEC = 5000000;
+
+// Radical buffer capacity. 16M × 16 bytes = 256 MB.
+// At 16k primaries × ~800 radicals at 10 keV ≈ 13M (fits);
+// at 65k primaries we'd need ~52M and will drop ~70% of secondaries.
+// Bigger than this hits WebGPU 256 MB default max. Adapter limits vary.
+const MAX_RAD = 16000000;
+
+// Chemistry buffer capacity. 8M × 16 = 128 MB for chem_pos / chem_rng.
+// First CHEM_N entries of rad_buf are used as the chemistry input.
+const CHEM_N = 8000000;
+
+// Voxel dose grid resolution (VC × VC × VC). 128³ × 4 bytes = 8 MB.
+const VC = 128;
+
+async function makePipes(np) {
+  if (G.np === np && G.pipe) return;
+  G.np = np;
+  G.pb = G.dev.createBuffer({size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST});
+  const resBytes = np * 32; // struct R = 8 u32s
+  G.res = G.dev.createBuffer({size: resBytes, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC});
+  G.res_rb = G.dev.createBuffer({size: resBytes, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
+  G.rng = G.dev.createBuffer({size: np * 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST});
+  G.dbg = G.dev.createBuffer({size: 32, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST});
+  G.dbg_rb = G.dev.createBuffer({size: 32, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
+
+  // Secondary electron tracking infrastructure
+  G.sec_buf = G.dev.createBuffer({size: MAX_SEC * 48, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST});
+  G.sec_pb = G.dev.createBuffer({size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST});
+  G.sec_stats = G.dev.createBuffer({size: 32, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST});
+  G.sec_stats_rb = G.dev.createBuffer({size: 32, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
+
+  // 3D voxel dose grid: VC^3 atomic u32, 1000 units = 1 eV
+  const DOSE_BYTES = VC * VC * VC * 4;
+  G.dose = G.dev.createBuffer({size: DOSE_BYTES, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST});
+  G.dose_rb = G.dev.createBuffer({size: DOSE_BYTES, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
+
+  // Shared atomic counters buffer (merged sec_count + per-species + rad_append):
+  //   [0..3] OH, eaq, H, H3O+ species counts
+  //   [6] secondary append index   [7] radical append index
+  G.counters = G.dev.createBuffer({size: 32, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST});
+  G.counters_rb = G.dev.createBuffer({size: 32, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
+
+  // Radical position buffer (Stage 5 V2): vec4<f32> per radical, ~80 MB.
+  G.rad_buf = G.dev.createBuffer({size: MAX_RAD * 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST});
+  // Readback buffer for DSB scoring — holds rad_buf (ionization-site positions)
+  // prior to chemistry diffusion. We read back up to MAX_RAD_RB entries.
+  G.rad_buf_rb = G.dev.createBuffer({size: MAX_RAD * 16, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
+
+  // Chemistry buffers (Stage 5 V3).
+  G.chem_pos = G.dev.createBuffer({size: CHEM_N * 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST});
+  G.chem_alive = G.dev.createBuffer({size: CHEM_N * 4,  usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST});
+  G.chem_rng   = G.dev.createBuffer({size: CHEM_N * 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST});
+  G.chem_uni   = G.dev.createBuffer({size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST});
+  G.chem_stats = G.dev.createBuffer({size: 128, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST});
+  G.chem_stats_rb = G.dev.createBuffer({size: 128, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
+  // DSB scoring: readback buffers for final chem_pos + chem_alive. Only
+  // used at end of chemistry, after t=1μs, so not in hot path.
+  G.chem_pos_rb   = G.dev.createBuffer({size: CHEM_N * 16, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
+  G.chem_alive_rb = G.dev.createBuffer({size: CHEM_N * 4,  usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
+
+  // V3d spatial hash buffers: cell_head (1M buckets × 4B = 4 MB) and
+  // next_idx (one per chemistry radical, linked-list next pointer)
+  const HASH_SIZE = 8388608;
+  G.chem_cell_head = G.dev.createBuffer({size: HASH_SIZE * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST});
+  G.chem_next_idx  = G.dev.createBuffer({size: CHEM_N * 4,    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST});
+
+  // Fetch generated cross section tables and prepend to both shaders.
+  const xs_resp = await fetch('/cross_sections.wgsl');
+  if (!xs_resp.ok) throw new Error('Failed to fetch /cross_sections.wgsl: ' + xs_resp.status);
+  const xs_src = await xs_resp.text();
+  lg(`Loaded cross_sections.wgsl (${xs_src.length} bytes)`, 'data');
+
+  // Both shaders share the same physics helpers (defined in HELPERS).
+  // Compilation order: cross sections → helpers → shader-specific bindings + main.
+  const full_primary = xs_src + '\n' + HELPERS + SHADER;
+  const full_sec     = xs_src + '\n' + HELPERS + SEC_SHADER;
+
+  // Compile primary pipeline
+  G.dev.pushErrorScope('validation');
+  const pmod = G.dev.createShaderModule({code: full_primary});
+  const pinfo = await pmod.getCompilationInfo();
+  const perr = await G.dev.popErrorScope();
+  if (pinfo.messages.length || perr) {
+    for (const m of pinfo.messages) lg('PRIM: L'+m.lineNum+': ' + m.message.slice(0,200), 'err');
+    if (perr) lg('PRIM err: ' + perr.message.slice(0,300), 'err');
+    throw new Error('Primary shader compilation failed');
+  }
+
+  const player = G.dev.createBindGroupLayout({entries: [
+    {binding:0, visibility:GPUShaderStage.COMPUTE, buffer:{type:'uniform'}},
+    {binding:1, visibility:GPUShaderStage.COMPUTE, buffer:{type:'storage'}},
+    {binding:2, visibility:GPUShaderStage.COMPUTE, buffer:{type:'storage'}},
+    {binding:3, visibility:GPUShaderStage.COMPUTE, buffer:{type:'storage'}},
+    {binding:4, visibility:GPUShaderStage.COMPUTE, buffer:{type:'storage'}},
+    {binding:5, visibility:GPUShaderStage.COMPUTE, buffer:{type:'storage'}},
+    {binding:6, visibility:GPUShaderStage.COMPUTE, buffer:{type:'storage'}},
+    {binding:7, visibility:GPUShaderStage.COMPUTE, buffer:{type:'storage'}}
+  ]});
+  G.bg = G.dev.createBindGroup({layout: player, entries: [
+    {binding:0, resource:{buffer: G.pb}},
+    {binding:1, resource:{buffer: G.res}},
+    {binding:2, resource:{buffer: G.rng}},
+    {binding:3, resource:{buffer: G.dbg}},
+    {binding:4, resource:{buffer: G.rad_buf}},
+    {binding:5, resource:{buffer: G.sec_buf}},
+    {binding:6, resource:{buffer: G.dose}},
+    {binding:7, resource:{buffer: G.counters}}
+  ]});
+  G.pipe = G.dev.createComputePipeline({
+    layout: G.dev.createPipelineLayout({bindGroupLayouts: [player]}),
+    compute: {module: pmod, entryPoint: 'main'}
+  });
+
+  // Compile secondary pipeline
+  G.dev.pushErrorScope('validation');
+  const smod = G.dev.createShaderModule({code: full_sec});
+  const sinfo = await smod.getCompilationInfo();
+  const serr = await G.dev.popErrorScope();
+  if (sinfo.messages.length || serr) {
+    for (const m of sinfo.messages) lg('SEC: ' + m.message.slice(0,300), 'err');
+    if (serr) lg('SEC err: ' + serr.message.slice(0,300), 'err');
+    throw new Error('Secondary shader compilation failed');
+  }
+
+  const slayer = G.dev.createBindGroupLayout({entries: [
+    {binding:0, visibility:GPUShaderStage.COMPUTE, buffer:{type:'uniform'}},
+    {binding:1, visibility:GPUShaderStage.COMPUTE, buffer:{type:'storage'}},
+    {binding:2, visibility:GPUShaderStage.COMPUTE, buffer:{type:'storage'}},
+    {binding:3, visibility:GPUShaderStage.COMPUTE, buffer:{type:'storage'}},
+    {binding:4, visibility:GPUShaderStage.COMPUTE, buffer:{type:'storage'}},
+    {binding:5, visibility:GPUShaderStage.COMPUTE, buffer:{type:'storage'}}
+  ]});
+  G.sec_bg = G.dev.createBindGroup({layout: slayer, entries: [
+    {binding:0, resource:{buffer: G.sec_pb}},
+    {binding:1, resource:{buffer: G.sec_buf}},
+    {binding:2, resource:{buffer: G.sec_stats}},
+    {binding:3, resource:{buffer: G.dose}},
+    {binding:4, resource:{buffer: G.counters}},
+    {binding:5, resource:{buffer: G.rad_buf}}
+  ]});
+  G.sec_pipe = G.dev.createComputePipeline({
+    layout: G.dev.createPipelineLayout({bindGroupLayouts: [slayer]}),
+    compute: {module: smod, entryPoint: 'step'}
+  });
+  lg(`Secondary buffer capacity: ${(MAX_SEC/1e6).toFixed(2)}M particles (${(MAX_SEC*48/1e6).toFixed(0)} MB)`, 'data');
+
+  // ----- Chemistry pipelines -----
+  G.dev.pushErrorScope('validation');
+  const cmod = G.dev.createShaderModule({code: CHEM_SHADER});
+  const cinfo = await cmod.getCompilationInfo();
+  const cerr = await G.dev.popErrorScope();
+  if (cinfo.messages.length || cerr) {
+    for (const m of cinfo.messages) { lg('CHEM: ' + m.message.slice(0,500), 'err'); console.error('CHEM compilation:', m); }
+    if (cerr) { lg('CHEM err: ' + cerr.message.slice(0,500), 'err'); console.error('CHEM validation:', cerr.message); }
+    throw new Error('Chemistry shader compilation failed');
+  }
+  const clayer = G.dev.createBindGroupLayout({entries: [
+    {binding:0, visibility:GPUShaderStage.COMPUTE, buffer:{type:'uniform'}},
+    {binding:1, visibility:GPUShaderStage.COMPUTE, buffer:{type:'storage'}},
+    {binding:2, visibility:GPUShaderStage.COMPUTE, buffer:{type:'storage'}},
+    {binding:3, visibility:GPUShaderStage.COMPUTE, buffer:{type:'storage'}},
+    {binding:4, visibility:GPUShaderStage.COMPUTE, buffer:{type:'storage'}},
+    {binding:5, visibility:GPUShaderStage.COMPUTE, buffer:{type:'read-only-storage'}},
+    {binding:6, visibility:GPUShaderStage.COMPUTE, buffer:{type:'storage'}},
+    {binding:7, visibility:GPUShaderStage.COMPUTE, buffer:{type:'storage'}}
+  ]});
+  G.chem_bg = G.dev.createBindGroup({layout: clayer, entries: [
+    {binding:0, resource:{buffer: G.chem_uni}},
+    {binding:1, resource:{buffer: G.chem_pos}},
+    {binding:2, resource:{buffer: G.chem_alive}},
+    {binding:3, resource:{buffer: G.chem_rng}},
+    {binding:4, resource:{buffer: G.chem_stats}},
+    {binding:5, resource:{buffer: G.rad_buf}},
+    {binding:6, resource:{buffer: G.chem_cell_head}},
+    {binding:7, resource:{buffer: G.chem_next_idx}}
+  ]});
+  const cpl = G.dev.createPipelineLayout({bindGroupLayouts: [clayer]});
+  G.chem_diffuse_pipe = G.dev.createComputePipeline({
+    layout: cpl,
+    compute: {module: cmod, entryPoint: 'diffuse'}
+  });
+  G.chem_react_pipe = G.dev.createComputePipeline({
+    layout: cpl,
+    compute: {module: cmod, entryPoint: 'react'}
+  });
+  G.chem_match_pipe = G.dev.createComputePipeline({
+    layout: cpl,
+    compute: {module: cmod, entryPoint: 'match_react'}
+  });
+  G.chem_count_pipe = G.dev.createComputePipeline({
+    layout: cpl,
+    compute: {module: cmod, entryPoint: 'count_alive'}
+  });
+  G.chem_init_pipe = G.dev.createComputePipeline({
+    layout: cpl,
+    compute: {module: cmod, entryPoint: 'init_thermal'}
+  });
+  G.chem_sample_pipe = G.dev.createComputePipeline({
+    layout: cpl,
+    compute: {module: cmod, entryPoint: 'sample_init'}
+  });
+  G.chem_clear_hash_pipe = G.dev.createComputePipeline({
+    layout: cpl,
+    compute: {module: cmod, entryPoint: 'clear_hash'}
+  });
+  G.chem_build_hash_pipe = G.dev.createComputePipeline({
+    layout: cpl,
+    compute: {module: cmod, entryPoint: 'build_hash'}
+  });
+  lg(`Chemistry buffer capacity: ${(CHEM_N/1e3).toFixed(0)}k radicals (hash 8M buckets, 1.5 nm cells)`, 'data');
+}
+
+function seedRNG(np, seed) {
+  const d = new Uint32Array(np * 4);
+  for (let i = 0; i < np; i++) {
+    let s = ((i + 1) * 2654435761 + seed * 1013904223) >>> 0;
+    const b = i * 4;
+    for (let j = 0; j < 4; j++) {
+      s ^= s >>> 16;
+      s = Math.imul(s, 0x45d9f3b);
+      s ^= s >>> 16;
+      d[b + j] = (s + j * 0x9E3779B9) >>> 0;
+    }
+  }
+  G.dev.queue.writeBuffer(G.rng, 0, d);
+}
+
+async function runAtEnergy(E_eV, np, box_nm, ce_eV, dna) {
+  seedRNG(np, Math.floor(E_eV));
+  G.dev.queue.writeBuffer(G.dbg, 0, new Uint32Array(8));
+  G.dev.queue.writeBuffer(G.sec_stats, 0, new Uint32Array(8));   // reset sec stats
+  // Zero dose grid (VC^3 * 4 bytes)
+  G.dev.queue.writeBuffer(G.dose, 0, new Uint32Array(VC * VC * VC));
+  // Reset shared counters (includes species + sec append + rad append)
+  G.dev.queue.writeBuffer(G.counters, 0, new Uint32Array(8));
+
+  // Primary uniforms: P {
+  //   n, box, ce, ms,
+  //   be, max_sec, vc, max_rad,
+  //   start_half, dna_enable, dna_grid_n, _pad3,
+  //   dna_rise, dna_spacing, dna_x0, dna_r_bb
+  // }  → 16 × 4 B = 64 B
+  const pbuf = new ArrayBuffer(64);
+  const pu = new Uint32Array(pbuf), pf = new Float32Array(pbuf);
+  pu[0] = np; pf[1] = box_nm; pf[2] = ce_eV; pu[3] = 65536; pf[4] = E_eV;
+  pu[5] = MAX_SEC;
+  pu[6] = VC;
+  pu[7] = MAX_RAD;
+  // start_half: 0 = origin start for CSDA + DSB capture. Tested 500 nm
+  // jitter — moved G(OH) 1.033× → 1.068× (WRONG direction; spreading
+  // reduces self-reactions which RAISES G(OH) vs Karamitros) AND dropped
+  // SSB_dir 16 → 10 / DSB 4 → 1 (sparser target overlap). Net regression.
+  pf[8] = 0.0;                                  // start_half
+  pu[9]  = (dna && E_eV === 10000) ? 1 : 0;     // dna_enable
+  pu[10] = dna ? dna.grid_N : 0;                // dna_grid_n
+  pu[11] = 0;                                   // _pad3
+  pf[12] = dna ? dna.rise : 0.0;                // dna_rise
+  pf[13] = dna ? dna.spacing_nm : 0.0;          // dna_spacing
+  pf[14] = dna ? dna.x0 : 0.0;                  // dna_x0
+  pf[15] = dna ? dna.r_bb : 0.0;                // dna_r_bb
+  G.dev.queue.writeBuffer(G.pb, 0, pbuf);
+
+  const t0 = performance.now();
+
+  // ------ Phase A: primaries ------
+  const enc1 = G.dev.createCommandEncoder();
+  const pass1 = enc1.beginComputePass();
+  pass1.setPipeline(G.pipe);
+  pass1.setBindGroup(0, G.bg);
+  pass1.dispatchWorkgroups(Math.ceil(np / 256));
+  pass1.end();
+  // Snapshot the shared counters after phase A so we know sec_n for phase B.
+  enc1.copyBufferToBuffer(G.counters, 0, G.counters_rb, 0, 32);
+  G.dev.queue.submit([enc1.finish()]);
+  await G.dev.queue.onSubmittedWorkDone();
+  const t_prim = performance.now() - t0;
+
+  // Read back counters (species + sec_n + rad_n after phase A)
+  await G.counters_rb.mapAsync(GPUMapMode.READ);
+  const counters_A = new Uint32Array(G.counters_rb.getMappedRange().slice(0));
+  G.counters_rb.unmap();
+  const sec_n_raw = counters_A[6];
+  const sec_n = Math.min(sec_n_raw, MAX_SEC);
+  const sec_dropped = Math.max(0, sec_n_raw - MAX_SEC);
+
+  // ------ Phase B: secondary wavefront stepping ------
+  let t_sec = 0;
+  if (sec_n > 0) {
+    // Secondary uniforms: SP {
+    //   n, box, ce, vc,
+    //   max_rad, dna_enable, dna_grid_n, _pad,
+    //   dna_rise, dna_spacing, dna_x0, dna_r_bb
+    // }  → 12 × 4 B = 48 B
+    const sbuf = new ArrayBuffer(48);
+    const su = new Uint32Array(sbuf), sf = new Float32Array(sbuf);
+    su[0] = sec_n; sf[1] = box_nm; sf[2] = ce_eV; su[3] = VC;
+    su[4] = MAX_RAD;
+    su[5] = (dna && E_eV === 10000) ? 1 : 0;    // dna_enable
+    su[6] = dna ? dna.grid_N : 0;               // dna_grid_n
+    su[7] = 0;                                  // _pad
+    sf[8]  = dna ? dna.rise : 0.0;              // dna_rise
+    sf[9]  = dna ? dna.spacing_nm : 0.0;        // dna_spacing
+    sf[10] = dna ? dna.x0 : 0.0;                // dna_x0
+    sf[11] = dna ? dna.r_bb : 0.0;              // dna_r_bb
+    G.dev.queue.writeBuffer(G.sec_pb, 0, sbuf);
+
+    const t1 = performance.now();
+    const MAX_SEC_STEPS = 2000;  // with Champion elastic, secondaries need many elastic steps to thermalize
+    const enc2 = G.dev.createCommandEncoder();
+    const pass2 = enc2.beginComputePass();
+    pass2.setPipeline(G.sec_pipe);
+    pass2.setBindGroup(0, G.sec_bg);
+    for (let step = 0; step < MAX_SEC_STEPS; step++) {
+      pass2.dispatchWorkgroups(Math.ceil(sec_n / 256));
+    }
+    pass2.end();
+    enc2.copyBufferToBuffer(G.sec_stats, 0, G.sec_stats_rb, 0, 32);
+    G.dev.queue.submit([enc2.finish()]);
+    await G.dev.queue.onSubmittedWorkDone();
+    t_sec = performance.now() - t1;
+  }
+
+  // ------ Readbacks ------
+  const enc3 = G.dev.createCommandEncoder();
+  enc3.copyBufferToBuffer(G.res, 0, G.res_rb, 0, np * 32);
+  enc3.copyBufferToBuffer(G.dbg, 0, G.dbg_rb, 0, 32);
+  enc3.copyBufferToBuffer(G.dose, 0, G.dose_rb, 0, VC * VC * VC * 4);
+  enc3.copyBufferToBuffer(G.counters, 0, G.counters_rb, 0, 32);
+  G.dev.queue.submit([enc3.finish()]);
+  await G.dev.queue.onSubmittedWorkDone();
+
+  await G.res_rb.mapAsync(GPUMapMode.READ);
+  const rs_buf = G.res_rb.getMappedRange().slice(0);
+  const rs_u32 = new Uint32Array(rs_buf);
+  const rs_f32 = new Float32Array(rs_buf);
+  G.res_rb.unmap();
+  await G.dbg_rb.mapAsync(GPUMapMode.READ);
+  const db = new Uint32Array(G.dbg_rb.getMappedRange().slice(0));
+  G.dbg_rb.unmap();
+
+  let sec_stats = new Uint32Array(8);
+  if (sec_n > 0) {
+    await G.sec_stats_rb.mapAsync(GPUMapMode.READ);
+    sec_stats = new Uint32Array(G.sec_stats_rb.getMappedRange().slice(0));
+    G.sec_stats_rb.unmap();
+  }
+
+  // Sum all dose voxels to get total deposited energy.
+  // u32 fixed point (1000 units = 1 eV). Use Float64 accumulator to avoid overflow.
+  await G.dose_rb.mapAsync(GPUMapMode.READ);
+  const dose_arr = new Uint32Array(G.dose_rb.getMappedRange().slice(0));
+  G.dose_rb.unmap();
+  let dose_sum = 0;
+  for (let i = 0; i < dose_arr.length; i++) dose_sum += dose_arr[i];
+  const total_deposited_eV = dose_sum / 100.0;
+
+  // Cache the 10 keV dose array for the 2D projection canvas viewer.
+  if (E_eV === 10000) {
+    G.last_dose = dose_arr.slice();
+    G.last_dose_box = box_nm;
+  }
+
+  // Read final counters (species counts and append indices after both phases)
+  await G.counters_rb.mapAsync(GPUMapMode.READ);
+  const counters_B = new Uint32Array(G.counters_rb.getMappedRange().slice(0));
+  G.counters_rb.unmap();
+  const rad_OH = counters_B[0], rad_eaq = counters_B[1], rad_H = counters_B[2];
+  const kernel_dna_hits = counters_B[4];      // kernel-level direct events in backbone reach
+  const rad_n_raw = counters_B[7];
+  const rad_n_stored = Math.min(rad_n_raw, MAX_RAD);
+  const rad_dropped = Math.max(0, rad_n_raw - MAX_RAD);
+  // G-value: molecules per 100 eV of deposited energy
+  const per100 = total_deposited_eV / 100.0;
+  const G_OH  = per100 > 0 ? rad_OH  / per100 : 0;
+  const G_eaq = per100 > 0 ? rad_eaq / per100 : 0;
+  const G_H   = per100 > 0 ? rad_H   / per100 : 0;
+
+  // Accumulate primary stats from thermalized particles only
+  let total_sum = 0, prod_sum = 0, sp_sum = 0, ions_sum = 0;
+  let n_therm = 0, n_esc = 0;
+  for (let i = 0; i < np; i++) {
+    const path  = rs_f32[i*8 + 0];
+    const prod  = rs_f32[i*8 + 1];
+    const finalE = rs_f32[i*8 + 2];
+    const ni   = rs_u32[i*8 + 3];
+    const esc  = rs_u32[i*8 + 5];
+    if (esc === 1) { n_esc++; continue; }
+    n_therm++;
+    total_sum += path;
+    prod_sum += prod;
+    if (path > 0) sp_sum += (E_eV - finalE) / path;
+    ions_sum += ni;
+  }
+  const mean_total = n_therm > 0 ? total_sum / n_therm : 0;
+  const mean_prod  = n_therm > 0 ? prod_sum / n_therm : 0;
+  const mean_sp    = n_therm > 0 ? sp_sum / n_therm : 0;
+  const mean_ions  = n_therm > 0 ? ions_sum / n_therm : 0;
+  const dt = performance.now() - t0;
+
+  // Energy conservation check.
+  // Input energy: N × E_eV (all primaries start at E_eV)
+  // Expected deposited (thermalized primaries only): n_therm × E_eV minus
+  //   residual (<cutoff) already deposited. Escaped particles carry energy
+  //   out of volume: subtract their average full E (conservative upper bound:
+  //   just assume they still have E_eV, so lower bound on deposited is
+  //   (n_therm × E_eV)).
+  const total_input_eV = np * E_eV;
+  const expected_deposited_eV = n_therm * E_eV;  // lower bound; escapees lose their remaining E
+  const cons_ratio = expected_deposited_eV > 0 ? total_deposited_eV / expected_deposited_eV : 0;
+  if (E_eV === 10000) {
+    const total_W_transfer = db[4] / 10.0; // sum of all W_transfer across all primaries
+    const mean_W_per_ion = total_W_transfer / Math.max(db[0], 1);
+    console.log(`[DEBUG] ions=${db[0]} mean_W_transfer=${mean_W_per_ion.toFixed(1)}eV total_W=${total_W_transfer.toFixed(0)}eV E_cons=${(cons_ratio*100).toFixed(1)}%`);
+  }
+
+  // Stage 6: readback rad_buf (ionization-site positions before chemistry
+  // diffusion) for event-level DSB scoring. Only do this at 10 keV since
+  // that's the only energy with chemistry + DSB scoring. This captures the
+  // nm-scale spatial clustering that the voxelized dose grid washes out.
+  let rad_buf_final = null;
+  // Capture rad_buf for ALL energies so we can dump to the offline IRT pipeline.
+  if (rad_n_stored > 0) {
+    const bytes = rad_n_stored * 16;
+    const enc = G.dev.createCommandEncoder();
+    enc.copyBufferToBuffer(G.rad_buf, 0, G.rad_buf_rb, 0, bytes);
+    G.dev.queue.submit([enc.finish()]);
+    await G.rad_buf_rb.mapAsync(GPUMapMode.READ, 0, bytes);
+    rad_buf_final = new Float32Array(G.rad_buf_rb.getMappedRange(0, bytes).slice(0));
+    G.rad_buf_rb.unmap();
+
+    // Best-effort POST to dump_server.cjs at /dump/<name>. Silent if no server.
+    try {
+      const dump_name = `rad_E${E_eV}_N${np}.bin`;
+      const resp = await fetch(`/dump/${dump_name}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: rad_buf_final.buffer.slice(0, bytes),
+      });
+      if (resp.ok) {
+        lg(`  dumped ${rad_n_stored} radicals → dumps/${dump_name} (${(bytes/1e6).toFixed(2)} MB)`, 'data');
+      }
+    } catch (_) { /* no dump server, ignore */ }
+  }
+
+  // ------ Stage 5: IRT chemistry via Web Worker (per-primary pairing) ------
+  // Radicals are tagged with parent primary ID in rad_buf .w.
+  // Worker only pairs radicals from the same primary — no inter-track artifacts.
+  let chem_result = null;
+  if (E_eV === 10000 && rad_n_stored > 0 && rad_buf_final) {
+    lg(`  Launching IRT worker: ${rad_n_stored} radicals (per-primary pairing)...`, 'data');
+    chem_result = await runChemistryWorker(rad_buf_final, rad_n_stored, n_therm, E_eV);
+  }
+
+  return {
+    E: E_eV, n_therm, n_esc, mean_total, mean_prod, mean_sp, mean_ions, dt,
+    t_prim, t_sec,
+    sec_n, sec_dropped,
+    sec_per_pri: sec_n / np,
+    sec_terminated_cutoff: sec_stats[1],
+    sec_terminated_bounds: sec_stats[2],
+    sec_steps: sec_stats[3],
+    sec_tertiary_ions: sec_stats[4],
+    total_deposited_eV,
+    expected_deposited_eV,
+    cons_ratio,
+    rad_OH, rad_eaq, rad_H,
+    G_OH, G_eaq, G_H,
+    rad_n_raw, rad_n_stored, rad_dropped, kernel_dna_hits,
+    chem_result,
+    rad_buf_final,
+  };
+}
+
+// ============================================================================
+// IRT (Independent Reaction Times) chemistry — CPU-side
+//
+// After GPU grid chemistry handles 0 → 10 ns (dense cloud, grid works well),
+// we switch to analytical first-passage time (IRT) for 10 ns → 1 μs. This
+// correctly handles late-time pair encounters that the grid's fixed-dt +
+// limited search radius misses.
+//
+// For each pair of radicals within a cutoff distance, we sample the first-
+// passage reaction time from the analytical Smoluchowski CDF:
+//   F(t) = (R/d) × erfc((d - R) / √(4 D_rel t))
+// Pairs are processed in time order via a min-heap. When both partners are
+// still alive at their sampled time, the reaction fires.
+// ============================================================================
+
+// Inverse complementary error function — rational approximation (Winitzki 2008)
+function erfcInv(p) {
+  // erfcInv(p) = erfinv(1-p). Use the relationship with erfinv.
+  return erfinv(1 - p);
+}
+function erfinv(x) {
+  // Winitzki approximation for erf⁻¹(x), |x| < 1
+  // Accurate to ~1e-4 which is fine for Monte Carlo sampling.
+  const a = 0.147;
+  const ln1mx2 = Math.log(1 - x * x);
+  const t1 = 2 / (Math.PI * a) + ln1mx2 / 2;
+  const t2 = ln1mx2 / a;
+  const sign = x >= 0 ? 1 : -1;
+  return sign * Math.sqrt(Math.sqrt(t1 * t1 - t2) - t1);
+}
+
+// Simple binary min-heap for IRT event scheduling
+class MinHeap {
+  constructor() { this.data = []; }
+  get size() { return this.data.length; }
+  push(val) {
+    this.data.push(val);
+    let i = this.data.length - 1;
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (this.data[p][0] <= this.data[i][0]) break;
+      [this.data[p], this.data[i]] = [this.data[i], this.data[p]];
+      i = p;
+    }
+  }
+  pop() {
+    const top = this.data[0];
+    const last = this.data.pop();
+    if (this.data.length > 0) {
+      this.data[0] = last;
+      let i = 0;
+      while (true) {
+        let s = i, l = 2*i+1, r = 2*i+2;
+        if (l < this.data.length && this.data[l][0] < this.data[s][0]) s = l;
+        if (r < this.data.length && this.data[r][0] < this.data[s][0]) s = r;
+        if (s === i) break;
+        [this.data[s], this.data[i]] = [this.data[i], this.data[s]];
+        i = s;
+      }
+    }
+    return top;
+  }
+}
+
+// Reaction constants (must match WGSL react_R / react_P / react_product)
+const IRT_REACTIONS = [
+  // [species_a, species_b, R_nm, pc, product (0=none, 1=H2O2, 2=H2, 3=eaq→H)]
+  [0, 0, 0.44, 0.376, 1],  // OH+OH → H2O2
+  [0, 1, 0.57, 0.980, 0],  // OH+eaq → none
+  [0, 2, 0.45, 0.511, 0],  // OH+H → none
+  [1, 1, 0.54, 0.125, 2],  // eaq+eaq → H2
+  [1, 2, 0.61, 0.455, 2],  // eaq+H → H2
+  [1, 3, 0.47, 0.538, 3],  // eaq+H3O+ → H (Geant4 k=2.11e10, Onsager σ=0.469)
+  [2, 2, 0.34, 0.216, 2],  // H+H → H2
+];
+const IRT_D = [2.2, 4.9, 7.0, 9.0]; // D_OH, D_eaq, D_H, D_H3O+ (nm²/ns)
+
+// Main IRT driver. Takes flat arrays of radical positions + species + alive
+// flags. Runs reactions from t_start to t_end (ns). Returns product counts.
+function irtChemistry(pos, alive_in, n_total, t_start_ns, t_end_ns) {
+  const dt_remaining = t_end_ns - t_start_ns;
+  // Cutoff MUST match grid hash search radius (cell 1.5 nm × 3 = 4.5 nm)
+  // so IRT only catches INTRA-TRACK pairs. Larger cutoffs capture cross-
+  // track pairs (from other primaries overlapping at origin) which are
+  // unphysical and cause massive over-reaction.
+  const CUTOFF = 4.5; // nm — same as grid hash search radius
+  const CUTOFF2 = CUTOFF * CUTOFF;
+
+  // Copy alive flags (we'll mutate them)
+  const alive = new Uint8Array(n_total);
+  const species = new Int8Array(n_total);
+  const px = new Float32Array(n_total);
+  const py = new Float32Array(n_total);
+  const pz = new Float32Array(n_total);
+  let n_alive = 0;
+  // Map original index → compact index for alive radicals
+  const compact = new Int32Array(n_total);
+  compact.fill(-1);
+  for (let i = 0; i < n_total; i++) {
+    if (alive_in[i] === 0) continue;
+    const sp = Math.round(pos[i * 4 + 3]);
+    if (sp < 0 || sp > 2) continue;
+    compact[i] = n_alive;
+    species[n_alive] = sp;
+    px[n_alive] = pos[i * 4 + 0];
+    py[n_alive] = pos[i * 4 + 1];
+    pz[n_alive] = pos[i * 4 + 2];
+    alive[n_alive] = 1;
+    n_alive++;
+  }
+
+  // Flat-array spatial hash (same structure as WGSL shader) for O(1) cell lookup
+  const CELL = 1.5;
+  const inv_cell = 1 / CELL;
+  const IRT_HASH = 1048576; // 2^20 buckets — 1M is enough for IRT subset
+  const cell_head_js = new Int32Array(IRT_HASH);
+  const next_idx_js  = new Int32Array(n_alive);
+  cell_head_js.fill(-1);
+
+  function hash3_js(ix, iy, iz) {
+    return (((ix * 73856093) ^ (iy * 19349663) ^ (iz * 83492791)) >>> 0) % IRT_HASH;
+  }
+
+  for (let i = 0; i < n_alive; i++) {
+    const cx = Math.floor(px[i] * inv_cell);
+    const cy = Math.floor(py[i] * inv_cell);
+    const cz = Math.floor(pz[i] * inv_cell);
+    const h = hash3_js(cx, cy, cz);
+    next_idx_js[i] = cell_head_js[h];
+    cell_head_js[h] = i;
+  }
+
+  // Build min-heap: for each alive radical, walk 27 neighbor cells (±1)
+  // and sample IRT reaction time for each pair (i < j to avoid double).
+  const heap = new MinHeap();
+  let n_pairs = 0;
+
+  for (let i = 0; i < n_alive; i++) {
+    if (alive[i] === 0) continue;
+    const ix = Math.floor(px[i] * inv_cell);
+    const iy = Math.floor(py[i] * inv_cell);
+    const iz = Math.floor(pz[i] * inv_cell);
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const h = hash3_js(ix + dx, iy + dy, iz + dz);
+          let j = cell_head_js[h];
+          while (j >= 0) {
+            if (j > i) samplePair(i, j);
+            j = next_idx_js[j];
+          }
+        }
+      }
+    }
+  }
+
+  function samplePair(i, j) {
+    const si = species[i], sj = species[j];
+    const a = Math.min(si, sj), b = Math.max(si, sj);
+    // Find matching reaction
+    let rxn = null;
+    for (const r of IRT_REACTIONS) {
+      if (r[0] === a && r[1] === b) { rxn = r; break; }
+    }
+    if (!rxn) return;
+    const R = rxn[2], pc = rxn[3], prod = rxn[4];
+    const D_rel = IRT_D[si] + IRT_D[sj];
+    const dx = px[i] - px[j], dy = py[i] - py[j], dz = pz[i] - pz[j];
+    const d2 = dx*dx + dy*dy + dz*dz;
+    if (d2 > CUTOFF2) return;
+    const d = Math.sqrt(d2);
+    if (d <= R) {
+      // Already in contact — react immediately with probability pc
+      if (Math.random() < pc) {
+        heap.push([t_start_ns + 0.001 * Math.random(), i, j, prod]);
+      }
+      n_pairs++;
+      return;
+    }
+    // Sample first-passage time from Smoluchowski CDF:
+    // F(t) = (R/d) × erfc((d-R)/√(4 D_rel t))
+    // If u > R/d, pair never reacts → skip
+    const u = Math.random();
+    if (u > R / d) { n_pairs++; return; }
+    // Also apply pc: effective u_adj = u / pc. If u_adj > R/d, skip.
+    const u_adj = u / pc;
+    if (u_adj > R / d) { n_pairs++; return; }
+    // Solve for t: erfc((d-R)/√(4Dt)) = u_adj × d/R
+    const arg = u_adj * d / R;
+    if (arg >= 1.0) { n_pairs++; return; } // erfc can't exceed ~1 for positive args
+    const z = erfcInv(arg); // (d-R)/√(4Dt) = z
+    if (z <= 0) { n_pairs++; return; }
+    const t_fp = (d - R) * (d - R) / (4 * D_rel * z * z);
+    if (t_fp > dt_remaining) { n_pairs++; return; }
+    heap.push([t_start_ns + t_fp, i, j, prod]);
+    n_pairs++;
+  }
+
+  // Process events in time order
+  let n_reacted = 0, prod_H2O2 = 0, prod_H2 = 0;
+  const alive_counts = [0, 0, 0]; // OH, eaq, H
+  while (heap.size > 0) {
+    const [t, i, j, prod] = heap.pop();
+    if (t > t_end_ns) break;
+    if (alive[i] === 0 || alive[j] === 0) continue;
+    // React!
+    alive[i] = 0;
+    alive[j] = 0;
+    n_reacted++;
+    if (prod === 1) prod_H2O2++;
+    else if (prod === 2) prod_H2++;
+    else if (prod === 3) {
+      // eaq+H3O+ → H: convert the eaq to H, H3O+ dies
+      const i_eaq = (species[i] === 1) ? i : j;
+      species[i_eaq] = 2;  // convert to H
+      alive[i_eaq] = 1;    // resurrect as H
+    }
+  }
+
+  // Count surviving species
+  for (let i = 0; i < n_alive; i++) {
+    if (alive[i] === 1) alive_counts[species[i]]++;
+  }
+
+  return { n_alive, n_pairs, n_reacted, prod_H2O2, prod_H2, alive_counts };
+}
+
+// Zero chem_stats[0..2], dispatch count_alive, readback. Returns per-species
+// alive counts plus running product counts. Used at each V3b checkpoint.
+async function chemMeasure(chem_n) {
+  const dev = G.dev;
+  // Zero the 3 alive slots only (leave product counters 3,4 alone).
+  dev.queue.writeBuffer(G.chem_stats, 0, new Uint32Array(3));
+  const enc = dev.createCommandEncoder();
+  const pass = enc.beginComputePass();
+  pass.setPipeline(G.chem_count_pipe);
+  pass.setBindGroup(0, G.chem_bg);
+  pass.dispatchWorkgroups(Math.ceil(chem_n / 256));
+  pass.end();
+  enc.copyBufferToBuffer(G.chem_stats, 0, G.chem_stats_rb, 0, 128);
+  dev.queue.submit([enc.finish()]);
+  await dev.queue.onSubmittedWorkDone();
+  await G.chem_stats_rb.mapAsync(GPUMapMode.READ);
+  const stats = new Uint32Array(G.chem_stats_rb.getMappedRange().slice(0));
+  G.chem_stats_rb.unmap();
+  return {
+    alive_OH:  stats[0],
+    alive_eaq: stats[1],
+    alive_H:   stats[2],
+    prod_H2O2: stats[3],
+    prod_H2:   stats[4]
+  };
+}
+
+// Stage 5 V3b: full chemistry stage.
+// Copies first N radicals from rad_buf, initializes state, runs a staged
+// time schedule with diffuse + react kernels each step, and calls count_alive
+// at each checkpoint to record G(t) for OH, e-aq, H, plus running totals of
+// H2O2 and H2 products.
+//
+// Schedule (7 checkpoints): 1 ps, 10 ps, 100 ps, 1 ns, 10 ns, 100 ns, 1 μs.
+// Uses per-step contact-reaction model with probabilities from Karamitros 2011.
+async function runChemistry(rad_n_raw, E_eV, n_therm) {
+  // V3e: spatial hash scales linearly, so use the full CHEM_N buffer. This
+  // brings us to ~200k radicals out of ~3.2M (6% of the full cloud) and
+  // washes out the first-few-slots warp-ordering bias almost entirely.
+  const chem_n = Math.min(rad_n_raw, CHEM_N);
+  if (chem_n === 0) return null;
+  const dev = G.dev;
+
+  const stride = 1;
+
+  // Write uniforms with stride for sample_init dispatch
+  {
+    const ubuf = new ArrayBuffer(16);
+    const uu = new Uint32Array(ubuf);
+    uu[0] = chem_n;
+    uu[2] = stride;
+    dev.queue.writeBuffer(G.chem_uni, 0, ubuf);
+  }
+
+  const enc_sample = dev.createCommandEncoder();
+  const pass_sample = enc_sample.beginComputePass();
+  pass_sample.setPipeline(G.chem_sample_pipe);
+  pass_sample.setBindGroup(0, G.chem_bg);
+  pass_sample.dispatchWorkgroups(Math.ceil(chem_n / 256));
+  pass_sample.end();
+  dev.queue.submit([enc_sample.finish()]);
+
+  // V3d: cell_head is not bulk-zeroed on the CPU side; the clear_hash kernel
+  // resets it each step. HASH_SIZE is hardcoded at 4M in the shader.
+  const HASH_SIZE = 8388608;
+  const clear_wg = Math.ceil(HASH_SIZE / 256);
+
+  // Initialize alive flags and per-radical RNG
+  const alive = new Uint32Array(chem_n);
+  alive.fill(1);
+  dev.queue.writeBuffer(G.chem_alive, 0, alive);
+
+  const rngSeed = new Uint32Array(chem_n * 4);
+  for (let i = 0; i < chem_n; i++) {
+    let s = ((i + 1) * 2246822519) >>> 0;
+    for (let j = 0; j < 4; j++) {
+      s ^= s >>> 16;
+      s = Math.imul(s, 0x45d9f3b);
+      s ^= s >>> 16;
+      rngSeed[i * 4 + j] = (s + j * 0x9E3779B9) >>> 0;
+    }
+  }
+  dev.queue.writeBuffer(G.chem_rng, 0, rngSeed);
+
+  // Zero full chem_stats (128 B = 32 u32)
+  dev.queue.writeBuffer(G.chem_stats, 0, new Uint32Array(32));
+
+  // GPU grid chemistry handles 0 → 1 μs in 7 checkpoints.
+  // IRT (independent reaction times) infrastructure exists above but is
+  // disabled because at origin-start (N=4096), any cutoff > 4.5 nm catches
+  // cross-track pairs (unphysical) while 4.5 nm adds negligible improvement
+  // over the grid (same pairs). Enabling IRT requires adding track_id per
+  // radical so only same-track pairs are processed at long range.
+  const IRT_ENABLED = false;
+  const schedule_gpu = [
+    // [dt_ns, n_steps, label_at_end]
+    // PM-IRT: each round = one IRT sample + one mutual-minimum match.
+    // dt_ns = cumulative time window for IRT acceptance.
+    // n_steps = matching rounds (3-5 for convergence, not 10-30).
+    // PM-IRT with deterministic pair hash: no inflation from re-testing.
+    // More rounds = better mutual-minimum convergence without over-reaction.
+    [0.0001, 10,  '1 ps'],
+    [0.001,  9,   '10 ps'],
+    [0.005,  18,  '100 ps'],
+    [0.05,   18,  '1 ns'],
+    [0.5,    18,  '10 ns'],
+    [3.0,    30,  '100 ns'],
+    [30.0,   30,  '1 μs']
+  ];
+
+  const timeline = [];
+  let t_accumulated_ns = 0;
+  const t_wall_start = performance.now();
+
+  // Pre-chemistry thermalization: apply species-specific Gaussian offsets.
+  // init_thermal doesn't read cu.dt or cu.stride, so we can reuse the uniform
+  // buffer as-is (still holds chem_n in slot 0 from sample_init).
+  {
+    const enc_init = dev.createCommandEncoder();
+    const pass_init = enc_init.beginComputePass();
+    pass_init.setPipeline(G.chem_init_pipe);
+    pass_init.setBindGroup(0, G.chem_bg);
+    pass_init.dispatchWorkgroups(Math.ceil(chem_n / 256));
+    pass_init.end();
+    dev.queue.submit([enc_init.finish()]);
+  }
+
+  // Measure t=0 state AFTER thermalization (checkpoint at t=0)
+  const t0_state = await chemMeasure(chem_n);
+  timeline.push({label: 't=0', t_ns: 0, ...t0_state});
+
+  for (const [dt_ns, n_steps, label] of schedule_gpu) {
+    const wg = Math.ceil(chem_n / 256);
+    const ubuf = new ArrayBuffer(16);
+    const uu = new Uint32Array(ubuf), uf = new Float32Array(ubuf);
+
+    // Simple diffusion + contact: diffuse → clear → build → react each step
+    uu[0] = chem_n; uf[1] = dt_ns; uu[2] = 1; uu[3] = 0;
+    dev.queue.writeBuffer(G.chem_uni, 0, ubuf);
+
+    const enc = dev.createCommandEncoder();
+    const pass = enc.beginComputePass();
+    for (let step = 0; step < n_steps; step++) {
+      pass.setPipeline(G.chem_diffuse_pipe);
+      pass.setBindGroup(0, G.chem_bg);
+      pass.dispatchWorkgroups(wg);
+      pass.setPipeline(G.chem_clear_hash_pipe);
+      pass.setBindGroup(0, G.chem_bg);
+      pass.dispatchWorkgroups(clear_wg);
+      pass.setPipeline(G.chem_build_hash_pipe);
+      pass.setBindGroup(0, G.chem_bg);
+      pass.dispatchWorkgroups(wg);
+      pass.setPipeline(G.chem_react_pipe);
+      pass.setBindGroup(0, G.chem_bg);
+      pass.dispatchWorkgroups(wg);
+    }
+    pass.end();
+    dev.queue.submit([enc.finish()]);
+    await dev.queue.onSubmittedWorkDone();
+
+    const state = await chemMeasure(chem_n);
+    t_accumulated_ns += dt_ns * n_steps;
+    timeline.push({label, t_ns: t_accumulated_ns, ...state});
+  }
+
+  // ---- Mean-field correction (DISABLED — using large-cell PM-IRT instead) ----
+  if (false) { // DISABLED
+  // At late times (> spur lifetime ~10 ns), radicals are spatially uncorrelated.
+  // Reactions follow bulk kinetics: dN/dt = -k×[A]×[B]×V.
+  // This captures inter-spur encounters that the hash-based PM-IRT misses.
+  // Applied as a post-correction to the PM-IRT G-values.
+  {
+    const last = timeline[timeline.length - 1];
+    const dep = n_therm * E_eV;
+    const per100 = dep / 100;
+    // Current alive counts from PM-IRT
+    let n_oh  = last.alive_OH  || Math.round(last.G_OH  * per100);
+    let n_eaq = last.alive_eaq || Math.round(last.G_eaq * per100);
+    let n_h   = last.alive_H   || Math.round(last.G_H   * per100);
+    let prod_h2o2 = last.prod_H2O2 || Math.round(last.G_H2O2 * per100);
+    let prod_h2   = last.prod_H2   || Math.round(last.G_H2   * per100);
+
+    // Effective volume for INTER-SPUR kinetics only.
+    // PM-IRT handles r < 60nm (large-cell pass). Mean-field corrects r > 60nm.
+    // Use the full radical cloud volume at late times.
+    // At 1 μs: diffusion length ~ sqrt(6 × D_max × 1000) ~ 170nm for OH
+    // Cloud expands to radius ~300nm around the 2750nm track → V ~ π×300²×2750
+    const V_nm3 = Math.PI * 300 * 300 * 2750; // ~7.8e8 nm³
+    // Scale rates by fraction of encounters BEYOND 60nm hash radius.
+    // Smoluchowski: probability of reaction at distance r scales as σ/r.
+    // Fraction missed by hash (r > 60nm): integral from 60 to ∞ of (σ/r)² / integral 0 to ∞
+    // ≈ σ/60 for small σ. For OH+eaq (σ=0.57): 0.57/60 ≈ 1%.
+    // But the TOTAL number of inter-spur pairs is much larger than spur pairs.
+    // The mean-field rate already accounts for this correctly via concentration.
+    // No scaling needed — just use the right volume.
+    const NW_mol = 33.4; // molecules/nm³ → convert to molar via Avogadro
+    // Rate constants: k (L/mol/s) → k' (nm³/ns per molecule pair)
+    // k' = k × 1e24 / (6.022e23 × 1e9)
+    const toK = (k_SI) => k_SI * 1e24 / (6.022e23 * 1e9);
+    const k_oh_eaq  = toK(2.95e10);   // OH+eaq → OH⁻
+    const k_oh_oh   = toK(5.5e9);     // OH+OH → H2O2
+    const k_oh_h    = toK(1.55e10);   // OH+H → H2O
+    const k_eaq_eaq = toK(6.36e9);    // eaq+eaq → H2
+    const k_eaq_h   = toK(2.5e10);    // eaq+H → H2
+    const k_eaq_h3o = toK(2.11e10);   // eaq+H3O+ → H
+
+    // Homogeneous kinetics: small Euler steps (dt=0.1 ns for stability)
+    const dt_homo = 0.1; // ns
+    const n_homo_steps = 9900; // 0.1 × 9900 = 990 ns (from ~10 ns to 1 μs)
+    let n_h3o = n_eaq; // H3O+ tracks eaq from ionization
+
+    for (let step = 0; step < n_homo_steps; step++) {
+      // Concentrations (molecules / nm³)
+      const c_oh  = n_oh / V_nm3;
+      const c_eaq = n_eaq / V_nm3;
+      const c_h   = n_h / V_nm3;
+      const c_h3o = n_h3o / V_nm3;
+
+      // Loss rates for each species (molecules/ns)
+      const loss_oh  = (2*k_oh_oh*c_oh + k_oh_eaq*c_eaq + k_oh_h*c_h) * c_oh * V_nm3 > 0
+        ? (k_oh_eaq*c_eaq + k_oh_h*c_h + 2*k_oh_oh*c_oh) * dt_homo : 0;
+      const loss_eaq = (k_oh_eaq*c_oh + k_eaq_h*c_h + 2*k_eaq_eaq*c_eaq + k_eaq_h3o*c_h3o) * dt_homo;
+      const gain_h   = k_eaq_h3o * c_eaq * c_h3o * V_nm3 * dt_homo;
+      const loss_h   = (k_oh_h*c_oh + k_eaq_h*c_eaq + 2*0/*H+H tiny*/) * dt_homo;
+
+      // Apply as fractional decay (more stable than absolute)
+      const f_oh  = Math.min(loss_oh, 0.1);  // cap at 10% per step
+      const f_eaq = Math.min(loss_eaq, 0.1);
+      const f_h   = Math.min(loss_h, 0.1);
+
+      const d_oh_oh = k_oh_oh * c_oh * c_oh * 0.5 * V_nm3 * dt_homo;
+      const d_eaq_eaq = k_eaq_eaq * c_eaq * c_eaq * 0.5 * V_nm3 * dt_homo;
+      const d_eaq_h = k_eaq_h * c_eaq * c_h * V_nm3 * dt_homo;
+      const d_oh_eaq = k_oh_eaq * c_oh * c_eaq * V_nm3 * dt_homo;
+      const d_oh_h = k_oh_h * c_oh * c_h * V_nm3 * dt_homo;
+      const d_eaq_h3o = k_eaq_h3o * c_eaq * c_h3o * V_nm3 * dt_homo;
+
+      n_oh  = Math.max(0, n_oh  - 2*d_oh_oh - d_oh_eaq - d_oh_h);
+      n_eaq = Math.max(0, n_eaq - 2*d_eaq_eaq - d_oh_eaq - d_eaq_h - d_eaq_h3o);
+      n_h   = Math.max(0, n_h   - d_oh_h - d_eaq_h + d_eaq_h3o);
+      n_h3o = Math.max(0, n_h3o - d_eaq_h3o);
+      prod_h2o2 += d_oh_oh;
+      prod_h2   += d_eaq_eaq + d_eaq_h;
+    }
+
+    // Replace last timeline entry with mean-field corrected values
+    const corrected = {
+      label: '1 μs (MF)',
+      t_ns: 1000,
+      G_OH: per100 > 0 ? n_oh / per100 : 0,
+      G_eaq: per100 > 0 ? n_eaq / per100 : 0,
+      G_H: per100 > 0 ? n_h / per100 : 0,
+      G_H2O2: per100 > 0 ? prod_h2o2 / per100 : 0,
+      G_H2: per100 > 0 ? prod_h2 / per100 : 0,
+    };
+    timeline.push(corrected);
+    lg(`  1 μs (MF) ${corrected.G_OH.toFixed(3)} ${corrected.G_eaq.toFixed(3)} ${corrected.G_H.toFixed(3)} ${corrected.G_H2O2.toFixed(3)} ${corrected.G_H2.toFixed(3)}`, 'data');
+  }} // end mean-field + if(false)
+
+  // ---- IRT handoff (disabled by default, see IRT_ENABLED above) ----
+  // When enabled: readback at last GPU checkpoint, run CPU IRT for remaining time.
+  if (IRT_ENABLED) {
+  const enc_irt = dev.createCommandEncoder();
+  enc_irt.copyBufferToBuffer(G.chem_pos,   0, G.chem_pos_rb,   0, chem_n * 16);
+  enc_irt.copyBufferToBuffer(G.chem_alive, 0, G.chem_alive_rb, 0, chem_n * 4);
+  dev.queue.submit([enc_irt.finish()]);
+  await Promise.all([
+    G.chem_pos_rb.mapAsync(GPUMapMode.READ, 0, chem_n * 16),
+    G.chem_alive_rb.mapAsync(GPUMapMode.READ, 0, chem_n * 4),
+  ]);
+  const irt_pos   = new Float32Array(G.chem_pos_rb.getMappedRange(0, chem_n * 16).slice(0));
+  const irt_alive = new Uint32Array(G.chem_alive_rb.getMappedRange(0, chem_n * 4).slice(0));
+  G.chem_pos_rb.unmap();
+  G.chem_alive_rb.unmap();
+
+  // Run IRT on ALL alive radicals. With 4.5 nm cutoff and flat-array hash,
+  // ~3.3M radicals × ~3 neighbors = ~5M pairs → ~5s total including heap.
+  const N_IRT = chem_n;
+  const t_irt_start = performance.now();
+  const irt = irtChemistry(irt_pos, irt_alive, N_IRT, 10.0, 1000.0);
+  const t_irt_wall = performance.now() - t_irt_start;
+
+  // N_IRT = chem_n → no scaling needed (irt_scale = 1)
+  const last_gpu = timeline[timeline.length - 1];
+
+  // IRT checkpoint: 100 ns (interpolated ~10% through IRT on log scale)
+  const f100 = 0.1;
+  timeline.push({
+    label: '100 ns', t_ns: 100,
+    alive_OH:  Math.round(last_gpu.alive_OH  - (last_gpu.alive_OH  - irt.alive_counts[0]) * f100),
+    alive_eaq: Math.round(last_gpu.alive_eaq - (last_gpu.alive_eaq - irt.alive_counts[1]) * f100),
+    alive_H:   Math.round(last_gpu.alive_H   - (last_gpu.alive_H   - irt.alive_counts[2]) * f100),
+    prod_H2O2: Math.round(last_gpu.prod_H2O2 + irt.prod_H2O2 * f100),
+    prod_H2:   Math.round(last_gpu.prod_H2   + irt.prod_H2   * f100),
+  });
+
+  // IRT checkpoint: 1 μs (full IRT result)
+  timeline.push({
+    label: '1 μs', t_ns: 1000,
+    alive_OH:  irt.alive_counts[0],
+    alive_eaq: irt.alive_counts[1],
+    alive_H:   irt.alive_counts[2],
+    prod_H2O2: last_gpu.prod_H2O2 + irt.prod_H2O2,
+    prod_H2:   last_gpu.prod_H2   + irt.prod_H2,
+  });
+
+  lg(`    IRT: ${irt.n_alive} alive, ${irt.n_pairs} pairs, ${irt.n_reacted} reacted → H2O2=${irt.prod_H2O2} H2=${irt.prod_H2} (${t_irt_wall.toFixed(0)} ms)`, 'data');
+  }  // end IRT_ENABLED
+
+  const t_wall = performance.now() - t_wall_start;
+
+  // DSB scoring: readback surviving radical positions + species + alive flags
+  // at t = 1 μs (or t = 10 ns if IRT is disabled). Used for indirect SSB.
+  const enc_rb = dev.createCommandEncoder();
+  enc_rb.copyBufferToBuffer(G.chem_pos,   0, G.chem_pos_rb,   0, chem_n * 16);
+  enc_rb.copyBufferToBuffer(G.chem_alive, 0, G.chem_alive_rb, 0, chem_n * 4);
+  dev.queue.submit([enc_rb.finish()]);
+  await Promise.all([
+    G.chem_pos_rb.mapAsync(GPUMapMode.READ, 0, chem_n * 16),
+    G.chem_alive_rb.mapAsync(GPUMapMode.READ, 0, chem_n * 4),
+  ]);
+  const chem_pos_final   = new Float32Array(G.chem_pos_rb.getMappedRange(0, chem_n * 16).slice(0));
+  const chem_alive_final = new Uint32Array(G.chem_alive_rb.getMappedRange(0, chem_n * 4).slice(0));
+  G.chem_pos_rb.unmap();
+  G.chem_alive_rb.unmap();
+
+  // G-value factor: molecules per 100 eV of deposited energy per primary.
+  const deposited_eV = n_therm * E_eV * (chem_n / rad_n_raw);
+  const per100 = deposited_eV / 100;
+
+  for (const cp of timeline) {
+    cp.G_OH   = per100 > 0 ? cp.alive_OH   / per100 : 0;
+    cp.G_eaq  = per100 > 0 ? cp.alive_eaq  / per100 : 0;
+    cp.G_H    = per100 > 0 ? cp.alive_H    / per100 : 0;
+    cp.G_H2O2 = per100 > 0 ? cp.prod_H2O2  / per100 : 0;
+    cp.G_H2   = per100 > 0 ? cp.prod_H2    / per100 : 0;
+  }
+
+  return { chem_n, t_wall, timeline, chem_pos_final, chem_alive_final, deposited_eV };
+}
+
+// ============================================================================
+// IRT Chemistry Web Worker wrapper
+// ============================================================================
+function runChemistryWorker(rad_buf_f32, rad_n, n_therm, E_eV, maxN) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker('irt-worker.js?v=' + Date.now());
+    worker.onmessage = function(e) {
+      if (e.data.type === 'progress') {
+        lg(`  [worker] ${e.data.msg}`, 'data');
+      } else if (e.data.type === 'result') {
+        const r = e.data;
+        // Log final G-values from timeline
+        if (r.timeline) {
+          for (const cp of r.timeline) {
+            lg(`  ${cp.label} ${cp.G_OH.toFixed(3)} ${cp.G_eaq.toFixed(3)} ${cp.G_H.toFixed(3)} ${cp.G_H2O2.toFixed(3)} ${cp.G_H2.toFixed(3)}`, 'data');
+          }
+        }
+        lg(`  IRT worker: ${r.n_reacted} reactions in ${(r.t_wall/1000).toFixed(1)}s (${r.chem_n} radicals)`, 'data');
+        if (r.rxn_info) {
+          for (const rx of r.rxn_info) {
+            lg(`    rxn ${rx.label}: ${rx.count} (σ=${rx.sigma}nm rc=${rx.rc}nm)`, 'data');
+          }
+        }
+        worker.terminate();
+        resolve({ chem_n: r.chem_n, t_wall: r.t_wall, timeline: r.timeline, chem_pos_final: null, chem_alive_final: null });
+      }
+    };
+    worker.onerror = function(err) {
+      lg(`  IRT worker error: ${err.message}`, 'err');
+      worker.terminate();
+      reject(err);
+    };
+    // Transfer the buffer to avoid copying (slice so each worker gets its own copy)
+    const buf = rad_buf_f32.buffer.slice(0);
+    worker.postMessage(
+      { rad_buf: new Float32Array(buf), rad_n, n_therm, E_eV, max_N: maxN },
+      [buf]
+    );
+  });
+}
+
+// ============================================================================
+// JS IRT CHEMISTRY — exact port of Geant4 G4DNAIRT algorithm (fallback).
+// Sequential priority queue, Smoluchowski first-passage time.
+// Runs on CPU (JS) using radical positions from GPU rad_buf.
+// ============================================================================
+
+function erfcinv(x) {
+  // Rational approximation of inverse complementary error function
+  if (x <= 0 || x >= 2) return 0;
+  const p = x > 1 ? 2 - x : x;
+  const t = Math.sqrt(-2 * Math.log(p / 2));
+  let y = t - (2.515517 + 0.802853*t + 0.010328*t*t) /
+              (1 + 1.432788*t + 0.189269*t*t + 0.001308*t*t*t);
+  y *= 0.7071067811865475; // /sqrt(2)
+  return x > 1 ? -y : y;
+}
+
+// Smoluchowski IRT: returns reaction time or -1 (no reaction)
+function sampleIRT(r0, sigma, rc, D) {
+  if (sigma <= 0 || D <= 0) return -1;
+  if (r0 <= sigma) return 0;
+  let r0e = r0;
+  if (rc !== 0) r0e = -rc / (1 - Math.exp(rc / r0));
+  const Winf = sigma / r0e;
+  const U = Math.random();
+  if (U <= 0 || U >= Winf) return -1;
+  const ei = erfcinv(r0e * U / sigma);
+  if (Math.abs(ei) < 1e-10) return -1;
+  const dr = r0e - sigma;
+  return 0.25 * dr * dr / (D * ei * ei);
+}
+
+// Reaction table: [specA, specB, sigma, rc, product]
+// Product: 0=both die, 1=H2O2, 2=H2, 3=eaq→H
+const IRT_RXN = [
+  [0, 0, 0.44, 0,    1],  // OH+OH → H2O2
+  [0, 1, 0.57, 0,    0],  // OH+eaq → OH⁻
+  [0, 2, 0.45, 0,    0],  // OH+H → H2O
+  [1, 1, 0.54, 0,    2],  // eaq+eaq → H2
+  [1, 2, 0.61, 0,    2],  // eaq+H → H2
+  [1, 3, 0.47, 0.71, 3],  // eaq+H3O+ → H (Onsager)
+  [2, 2, 0.34, 0,    2],  // H+H → H2
+];
+const IRT_D_JS = [2.2, 4.9, 7.0, 9.0]; // D per species (nm²/ns)
+
+function findRxn(sa, sb) {
+  const a = Math.min(sa, sb), b = Math.max(sa, sb);
+  for (const r of IRT_RXN) if (r[0] === a && r[1] === b) return r;
+  return null;
+}
+
+async function runChemistryIRT(rad_buf_f32, rad_n, n_therm, E_eV) {
+  const t0 = performance.now();
+  const N = Math.min(rad_n, 2000000); // 2M subsample with stride
+
+  // Extract positions and species from rad_buf
+  const px = new Float64Array(N), py = new Float64Array(N), pz = new Float64Array(N);
+  const species = new Int32Array(N);
+  const alive = new Uint8Array(N).fill(1);
+
+  // Stride-sample to avoid spatial clustering from sequential buffer fill
+  const stride = Math.max(1, Math.floor(rad_n / N));
+  for (let i = 0; i < N; i++) {
+    const si = (i * stride) % rad_n;
+    px[i] = rad_buf_f32[si*4];
+    py[i] = rad_buf_f32[si*4+1];
+    pz[i] = rad_buf_f32[si*4+2];
+    species[i] = Math.round(rad_buf_f32[si*4+3]);
+    if (species[i] < 0 || species[i] > 3) { alive[i] = 0; }
+  }
+
+  // Apply thermalization offsets — exact Geant4 G4DNAWaterDissociationDisplacer
+  // sigma_1D values: OH=0.8/sqrt(3), eaq=Meesungnoen2002(1.7eV)*0.6267, H=17/18*2.4/sqrt(3)
+  const sigmas = [0.462, 1.764, 1.309]; // OH, eaq, H (sigma_1D per axis, nm)
+  const f_clf = Math.SQRT2; // CLF: (sum6-3) has std=sqrt(0.5), *sqrt(2) → N(0,1)
+  for (let i = 0; i < N; i++) {
+    if (!alive[i]) continue;
+    const s = species[i];
+    let sigma;
+    if (s <= 2) sigma = sigmas[s];
+    else if (s === 3) sigma = Math.random() < 0.5 ? 0.462 : 0; // H3O+ 50/50
+    else continue;
+    if (sigma > 0) {
+      px[i] += sigma * (Math.random() + Math.random() + Math.random() + Math.random() +
+                        Math.random() + Math.random() - 3) * f_clf;
+      py[i] += sigma * (Math.random() + Math.random() + Math.random() + Math.random() +
+                        Math.random() + Math.random() - 3) * f_clf;
+      pz[i] += sigma * (Math.random() + Math.random() + Math.random() + Math.random() +
+                        Math.random() + Math.random() - 3) * f_clf;
+    }
+  }
+
+  // Build spatial hash
+  const CELL = 5.0;
+  const hash = new Map(); // "ix,iy,iz" -> [indices]
+  function cellKey(x, y, z) {
+    return `${Math.floor(x/CELL)},${Math.floor(y/CELL)},${Math.floor(z/CELL)}`;
+  }
+  for (let i = 0; i < N; i++) {
+    if (!alive[i]) continue;
+    const k = cellKey(px[i], py[i], pz[i]);
+    if (!hash.has(k)) hash.set(k, []);
+    hash.get(k).push(i);
+  }
+
+  // Sample IRT for all pairs within R_cutoff, build priority queue
+  // Priority queue: min-heap by reaction time
+  const heap = []; // [{t, i, j}]
+  function heapPush(item) {
+    heap.push(item);
+    let c = heap.length - 1;
+    while (c > 0) {
+      const p = (c - 1) >> 1;
+      if (heap[p].t <= heap[c].t) break;
+      [heap[p], heap[c]] = [heap[c], heap[p]];
+      c = p;
+    }
+  }
+  function heapPop() {
+    if (heap.length <= 1) return heap.pop();
+    const top = heap[0];
+    heap[0] = heap.pop();
+    let p = 0;
+    while (true) {
+      let s = p, l = 2*p+1, r = 2*p+2;
+      if (l < heap.length && heap[l].t < heap[s].t) s = l;
+      if (r < heap.length && heap[r].t < heap[s].t) s = r;
+      if (s === p) break;
+      [heap[p], heap[s]] = [heap[s], heap[p]];
+      p = s;
+    }
+    return top;
+  }
+
+  lg(`  IRT: ${N} radicals, building pair table...`, 'data');
+
+  // For each radical, scan 27 neighbor cells (yield every 200k to prevent freeze)
+  let n_pairs = 0;
+  const yieldEvery = 200000;
+  for (let i = 0; i < N; i++) {
+    if (i > 0 && i % yieldEvery === 0) await new Promise(r => setTimeout(r, 0));
+    if (!alive[i]) continue;
+    const si = species[i];
+    const Di = IRT_D_JS[si] || 0;
+    if (Di === 0) continue;
+    const cx = Math.floor(px[i] / CELL), cy = Math.floor(py[i] / CELL), cz = Math.floor(pz[i] / CELL);
+
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const k = `${cx+dx},${cy+dy},${cz+dz}`;
+          const bucket = hash.get(k);
+          if (!bucket) continue;
+          for (const j of bucket) {
+            if (j <= i) continue; // avoid double-counting
+            if (!alive[j]) continue;
+            const sj = species[j];
+            const rxn = findRxn(si, sj);
+            if (!rxn) continue;
+            const ddx = px[i]-px[j], ddy = py[i]-py[j], ddz = pz[i]-pz[j];
+            const r0 = Math.sqrt(ddx*ddx + ddy*ddy + ddz*ddz);
+            if (r0 > 15) continue; // R_cutoff
+            const Dj = IRT_D_JS[sj] || 0;
+            const t = sampleIRT(r0, rxn[2], rxn[3], Di + Dj);
+            if (t >= 0 && t < 1000) { // t_max = 1 μs = 1000 ns
+              heapPush({t, i, j});
+              n_pairs++;
+            }
+          }
+        }
+      }
+    }
+  }
+  lg(`  IRT: ${n_pairs} reactive pairs queued`, 'data');
+
+  // Process reactions in time order (exact Geant4 algorithm)
+  let prod_H2O2 = 0, prod_H2 = 0, n_reacted = 0;
+  const checkpoints = [0.001, 0.01, 0.1, 1, 10, 100, 1000]; // ns
+  const labels = ['1 ps', '10 ps', '100 ps', '1 ns', '10 ns', '100 ns', '1 μs'];
+  const timeline = [];
+  let cp_idx = 0;
+
+  function countSpecies() {
+    let oh=0, eaq=0, h=0;
+    for (let i = 0; i < N; i++) {
+      if (!alive[i]) continue;
+      if (species[i]===0) oh++;
+      else if (species[i]===1) eaq++;
+      else if (species[i]===2) h++;
+    }
+    const dep = n_therm * E_eV * (N / rad_n); // scale by subsample fraction
+    const per100 = dep / 100;
+    return {
+      G_OH: per100>0 ? oh/per100 : 0,
+      G_eaq: per100>0 ? eaq/per100 : 0,
+      G_H: per100>0 ? h/per100 : 0,
+      G_H2O2: per100>0 ? prod_H2O2/per100 : 0,
+      G_H2: per100>0 ? prod_H2/per100 : 0,
+    };
+  }
+
+  while (heap.length > 0) {
+    const evt = heapPop();
+
+    // Record checkpoints
+    while (cp_idx < checkpoints.length && evt.t >= checkpoints[cp_idx]) {
+      const g = countSpecies();
+      timeline.push({label: labels[cp_idx], t_ns: checkpoints[cp_idx], ...g});
+      lg(`  ${labels[cp_idx]} ${g.G_OH.toFixed(3)} ${g.G_eaq.toFixed(3)} ${g.G_H.toFixed(3)} ${g.G_H2O2.toFixed(3)} ${g.G_H2.toFixed(3)}`, 'data');
+      cp_idx++;
+    }
+
+    // Check if both still alive
+    if (!alive[evt.i] || !alive[evt.j]) continue;
+
+    // Execute reaction
+    const si = species[evt.i], sj = species[evt.j];
+    const rxn = findRxn(si, sj);
+    if (!rxn) continue;
+
+    alive[evt.i] = 0;
+    alive[evt.j] = 0;
+    n_reacted++;
+
+    const prod = rxn[4];
+    if (prod === 1) prod_H2O2++;
+    else if (prod === 2) prod_H2++;
+    else if (prod === 3) {
+      // eaq+H3O+ → H: convert eaq to H
+      const i_eaq = (si === 1) ? evt.i : evt.j;
+      species[i_eaq] = 2;
+      alive[i_eaq] = 1;
+    }
+  }
+
+  // Final checkpoint
+  while (cp_idx < checkpoints.length) {
+    const g = countSpecies();
+    timeline.push({label: labels[cp_idx], t_ns: checkpoints[cp_idx], ...g});
+    lg(`  ${labels[cp_idx]} ${g.G_OH.toFixed(3)} ${g.G_eaq.toFixed(3)} ${g.G_H.toFixed(3)} ${g.G_H2O2.toFixed(3)} ${g.G_H2.toFixed(3)}`, 'data');
+    cp_idx++;
+  }
+
+  const t_wall = performance.now() - t0;
+  lg(`  IRT chemistry: ${n_reacted} reactions in ${(t_wall/1000).toFixed(1)}s`, 'data');
+
+  return { chem_n: N, t_wall, timeline, chem_pos_final: null, chem_alive_final: null };
+}
+
+// ============================================================================
+// DNA target geometry + DSB scoring (post-processing).
+//
+// Minimal target model: a straight B-DNA double helix segment centered at the
+// origin, oriented along the X axis. Two sugar-phosphate backbone chains
+// helically wound around the axis.
+//
+// Parameters (standard Karamitros / Nikjoo conventions):
+//   rise        0.34  nm/bp        — B-DNA base-pair rise
+//   bp_per_turn 10.5               — helical pitch
+//   r_backbone  1.0   nm           — radius of sugar-phosphate strand from axis
+//   r_damage    0.29  nm           — reaction radius for OH → backbone (Nikjoo/Karamitros)
+//   p_OH_ssb    0.4                — probability OH collision → SSB (Nikjoo)
+//   E_thr_ssb   17.5  eV           — direct damage threshold energy per hit (Nikjoo)
+//   len         5000  nm           — target length (= 14700 bp)
+//
+// Scoring:
+//   Indirect SSB — loop surviving OH at t=1 μs, find nearest backbone point on
+//     each strand, if distance < r_damage → roll p_OH_ssb → mark bp on that
+//     strand as hit.
+//   Direct SSB — voxels of the dose grid intersecting the DNA cylinder contain
+//     some fraction of their deposited energy inside the backbone volume.
+//     backbone_vol_frac = 2 × π × r_sugar² / (π × r_shell² - 0) where we treat
+//     a shell of inner radius 0 outer r_backbone+r_damage. Direct SSB count
+//     ≈ (E_dose_in_shell × vol_frac) / E_thr_ssb × p_ion_direct.
+//     This is a rough estimate (not event-level), appropriate for first-pass.
+// ============================================================================
+
+// Build a plaquette of parallel straight B-DNA fibers filling the track volume.
+// One straight fiber only captures ~1 nm out of a ~2 μm radius track cloud,
+// so instead we lay a regular 2D grid of NxN parallel fibers (along X) at
+// (y_k, z_k) offsets spaced by `spacing`. With spacing=200 nm and N=11, the
+// grid covers ±1000 nm in y,z — inside the ~2 μm CSDA range of 10 keV tracks.
+// Total bp = N² × n_bp_per_fiber, giving ~1.8 Mbp of target.
+//
+// Geometry does NOT represent a biological nucleus — it's a uniform sampling
+// grid for yield-per-Gbp scoring. We report DSB/Gy/Gbp which normalizes out
+// the bp count.
+function buildDNATarget(L_nm, grid_N, spacing_nm) {
+  const rise = 0.34;
+  const bp_per_turn = 10.5;
+  const r_bb = 1.0;
+  const n_bp_per = Math.floor(L_nm / rise);
+  const x0 = -(n_bp_per - 1) * rise * 0.5;
+  const d_phase = (2 * Math.PI) / bp_per_turn;
+  const n_fibers = grid_N * grid_N;
+  const n_bp = n_fibers * n_bp_per;
+  // Per-fiber (y, z) offset
+  const fy = new Float32Array(n_fibers);
+  const fz = new Float32Array(n_fibers);
+  const off = -((grid_N - 1) * spacing_nm) * 0.5;
+  for (let fi = 0; fi < grid_N; fi++) {
+    for (let fj = 0; fj < grid_N; fj++) {
+      const idx = fi * grid_N + fj;
+      fy[idx] = off + fi * spacing_nm;
+      fz[idx] = off + fj * spacing_nm;
+    }
+  }
+  // Two backbone strands per fiber — precompute relative helical offsets
+  // (independent of fiber). rbb0, rbb1 are length 2*n_bp_per: (y0,z0,y1,z1,...).
+  const rbb0 = new Float32Array(n_bp_per * 2);
+  const rbb1 = new Float32Array(n_bp_per * 2);
+  for (let i = 0; i < n_bp_per; i++) {
+    const phi = i * d_phase;
+    rbb0[i * 2 + 0] = r_bb * Math.cos(phi);
+    rbb0[i * 2 + 1] = r_bb * Math.sin(phi);
+    rbb1[i * 2 + 0] = r_bb * Math.cos(phi + Math.PI);
+    rbb1[i * 2 + 1] = r_bb * Math.sin(phi + Math.PI);
+  }
+  return { n_bp, n_bp_per, n_fibers, grid_N, spacing_nm, rise, r_bb, x0, fy, fz, rbb0, rbb1, L_nm };
+}
+
+// Score indirect SSBs from surviving OH radicals at t=1 μs.
+// chem_pos layout: vec4 per radical. (x, y, z) in nm, w = species code
+// (0=OH, 1=eaq, 2=H). Matches G4DNA species enum in chem kernel.
+//
+// With a grid of parallel fibers, we snap each OH to its nearest fiber via
+// O(1) grid-cell lookup, then check if it lies within the fiber's backbone
+// reach radius (r_bb + r_damage ≈ 1.3 nm).
+function scoreIndirectSSB(dna, chem_pos_final, chem_alive_final, chem_n, rng) {
+  const r_damage = 0.29;          // nm
+  const r_damage2 = r_damage * r_damage;
+  const p_ssb = 0.4;              // probability of SSB on contact
+  // Flat bp hit flag array: one slot per bp, interleaved strand encoded
+  // as index = (fiber * n_bp_per + bp) + strand * dna.n_bp
+  const hits = new Uint8Array(dna.n_bp * 2);
+  const x_half = (dna.n_bp_per - 1) * dna.rise * 0.5;
+  const rise_inv = 1 / dna.rise;
+  // Grid layout: (grid_N × grid_N) fibers on a regular (y,z) lattice. Snap
+  // each OH to its nearest grid cell by rounding (y,z) to nearest fiber offset.
+  const grid_off = -((dna.grid_N - 1) * dna.spacing_nm) * 0.5;
+  const inv_spacing = 1 / dna.spacing_nm;
+  let candidates = 0, in_reach = 0, ssb0 = 0, ssb1 = 0;
+  for (let i = 0; i < chem_n; i++) {
+    if (chem_alive_final[i] === 0) continue;
+    const sp = Math.round(chem_pos_final[i * 4 + 3]);
+    if (sp !== 0) continue; // only OH (code 0)
+    const x = chem_pos_final[i * 4 + 0];
+    const y = chem_pos_final[i * 4 + 1];
+    const z = chem_pos_final[i * 4 + 2];
+    // Reject: outside fiber axial extent
+    if (x < -x_half - r_damage || x > x_half + r_damage) continue;
+    // Snap to nearest fiber in the grid
+    const fi_raw = (y - grid_off) * inv_spacing;
+    const fj_raw = (z - grid_off) * inv_spacing;
+    const fi = Math.round(fi_raw);
+    const fj = Math.round(fj_raw);
+    if (fi < 0 || fi >= dna.grid_N || fj < 0 || fj >= dna.grid_N) continue;
+    const fiber_idx = fi * dna.grid_N + fj;
+    const y_rel = y - dna.fy[fiber_idx];
+    const z_rel = z - dna.fz[fiber_idx];
+    const r2 = y_rel * y_rel + z_rel * z_rel;
+    // Reject anything well outside the outer damage shell.
+    if (r2 > (dna.r_bb + r_damage) * (dna.r_bb + r_damage)) continue;
+    candidates++;
+    // Which bp (along X) is closest?
+    const bp_est = Math.round((x + x_half) * rise_inv);
+    const bp0 = Math.max(0, bp_est - 2);
+    const bp1 = Math.min(dna.n_bp_per - 1, bp_est + 2);
+    let best_d2 = Infinity, best_bp = -1, best_strand = -1;
+    for (let b = bp0; b <= bp1; b++) {
+      const dy0 = y_rel - dna.rbb0[b * 2 + 0];
+      const dz0 = z_rel - dna.rbb0[b * 2 + 1];
+      const dx  = x - (dna.x0 + b * dna.rise);
+      const d20 = dx * dx + dy0 * dy0 + dz0 * dz0;
+      if (d20 < best_d2) { best_d2 = d20; best_bp = b; best_strand = 0; }
+      const dy1 = y_rel - dna.rbb1[b * 2 + 0];
+      const dz1 = z_rel - dna.rbb1[b * 2 + 1];
+      const d21 = dx * dx + dy1 * dy1 + dz1 * dz1;
+      if (d21 < best_d2) { best_d2 = d21; best_bp = b; best_strand = 1; }
+    }
+    if (best_d2 < r_damage2) {
+      in_reach++;
+      if (rng() < p_ssb) {
+        // Flat bp index across the whole grid: fiber * n_bp_per + bp
+        const global_bp = fiber_idx * dna.n_bp_per + best_bp;
+        const idx = global_bp + best_strand * dna.n_bp;
+        if (hits[idx] === 0) {
+          hits[idx] = 1;
+          if (best_strand === 0) ssb0++; else ssb1++;
+        }
+      }
+    }
+  }
+  return { hits, ssb0, ssb1, candidates, in_reach };
+}
+
+// Score direct SSBs by sampling the dose grid at each backbone bp position.
+// The DNA backbone is sub-voxel (1 nm radius vs ~117 nm voxels), so the voxel
+// at each bp gives the volume-average dose density there.
+//   E_per_voxel (eV) → n_ionizations = E / E_mean_ion
+//   p(ionization hits backbone) = backbone_vol / voxel_vol
+//   p(backbone ionization → SSB) = p_ion_ssb
+//
+// Returns:
+//  - direct_ssb: total fractional expectation (continuous)
+//  - fiber_lambda_s0, fiber_lambda_s1: per-fiber summed λ (one slot per fiber)
+//    used for expected-DSB clustering
+// Event-level direct SSB scoring from rad_buf (ionization-site positions).
+// rad_buf stores one vec4 per radical created at an ionization event: each
+// ionization generates 2 entries (OH + e-aq at same position) and each
+// dissociative excitation generates 2 entries (OH + H at same position).
+// We treat every unique ionization/excitation site as a direct-damage event.
+//
+// For each event: find nearest fiber via grid-cell snap, snap to nearest bp
+// along X, check distance to nearest backbone point; if within r_direct
+// (0.29 nm), roll p_direct (0.15) → direct SSB hit. Writes into a flat
+// hits array [n_bp*2].
+function scoreDirectSSB_events(dna, rad_buf, rad_n, rng) {
+  const r_direct = 0.29;
+  const r_direct2 = r_direct * r_direct;
+  const p_direct = 0.15;
+  const hits = new Uint8Array(dna.n_bp * 2);
+  const x_half = (dna.n_bp_per - 1) * dna.rise * 0.5;
+  const rise_inv = 1 / dna.rise;
+  const grid_off = -((dna.grid_N - 1) * dna.spacing_nm) * 0.5;
+  const inv_spacing = 1 / dna.spacing_nm;
+  let candidates = 0, in_reach = 0, ssb_count = 0;
+  // To dedupe ionization events (which generate 2 radicals at same site),
+  // step in strides of 2 — but only skip the duplicate if positions match.
+  let i = 0;
+  while (i < rad_n) {
+    const x = rad_buf[i * 4 + 0];
+    const y = rad_buf[i * 4 + 1];
+    const z = rad_buf[i * 4 + 2];
+    // Check next entry for duplicate position (same event)
+    let skip = 1;
+    if (i + 1 < rad_n) {
+      if (rad_buf[(i + 1) * 4 + 0] === x &&
+          rad_buf[(i + 1) * 4 + 1] === y &&
+          rad_buf[(i + 1) * 4 + 2] === z) {
+        skip = 2;  // this is a paired event, dedupe
+      }
+    }
+    i += skip;
+    // Reject outside fiber axial extent
+    if (x < -x_half - r_direct || x > x_half + r_direct) continue;
+    // Snap to nearest fiber grid cell
+    const fi = Math.round((y - grid_off) * inv_spacing);
+    const fj = Math.round((z - grid_off) * inv_spacing);
+    if (fi < 0 || fi >= dna.grid_N || fj < 0 || fj >= dna.grid_N) continue;
+    const fiber_idx = fi * dna.grid_N + fj;
+    const y_rel = y - dna.fy[fiber_idx];
+    const z_rel = z - dna.fz[fiber_idx];
+    const r2 = y_rel * y_rel + z_rel * z_rel;
+    if (r2 > (dna.r_bb + r_direct) * (dna.r_bb + r_direct)) continue;
+    candidates++;
+    // Snap to nearest bp along X and scan ±2 to find closest backbone
+    const bp_est = Math.round((x + x_half) * rise_inv);
+    const b0 = Math.max(0, bp_est - 2);
+    const b1 = Math.min(dna.n_bp_per - 1, bp_est + 2);
+    let best_d2 = Infinity, best_bp = -1, best_strand = -1;
+    for (let b = b0; b <= b1; b++) {
+      const dx = x - (dna.x0 + b * dna.rise);
+      const dy0 = y_rel - dna.rbb0[b * 2 + 0];
+      const dz0 = z_rel - dna.rbb0[b * 2 + 1];
+      const d20 = dx * dx + dy0 * dy0 + dz0 * dz0;
+      if (d20 < best_d2) { best_d2 = d20; best_bp = b; best_strand = 0; }
+      const dy1 = y_rel - dna.rbb1[b * 2 + 0];
+      const dz1 = z_rel - dna.rbb1[b * 2 + 1];
+      const d21 = dx * dx + dy1 * dy1 + dz1 * dz1;
+      if (d21 < best_d2) { best_d2 = d21; best_bp = b; best_strand = 1; }
+    }
+    if (best_d2 < r_direct2) {
+      in_reach++;
+      if (rng() < p_direct) {
+        const global_bp = fiber_idx * dna.n_bp_per + best_bp;
+        const idx = global_bp + best_strand * dna.n_bp;
+        if (hits[idx] === 0) {
+          hits[idx] = 1;
+          ssb_count++;
+        }
+      }
+    }
+  }
+  return { hits, ssb_count, candidates, in_reach };
+}
+
+// Score direct SSBs per-bp. Returns a flat per-bp λ array (2 strands × n_bp)
+// where lambda[base + b] is the expected SSB at strand-0 bp b of fiber fi
+// (base = fi * n_bp_per), and lambda[n_bp + base + b] for strand 1. Also
+// returns the total direct_ssb (sum of all λ).
+function scoreDirectSSB(dna, dose_arr, box_nm) {
+  const vc = VC;
+  // box_nm is the half-width of the simulation volume (matches WGSL p.box).
+  // Voxel size = 2 * box_nm / vc.
+  const vox_nm = 2 * box_nm / vc;
+  const vox_vol = vox_nm * vox_nm * vox_nm;
+  const half = box_nm;
+  const inv_vox = 1 / vox_nm;
+  const r_sugar = 0.29;                      // nm — sugar+phosphate "hit radius"
+  const bb_vol_per_bp = 4.0 / 3 * Math.PI * r_sugar * r_sugar * r_sugar;
+  const E_mean_ion = 22;                     // eV per ionization (Emfietzoglou avg)
+  const p_ion_ssb = 0.15;                    // backbone ionization → SSB (Nikjoo 2002)
+  const K = (bb_vol_per_bp / vox_vol) * p_ion_ssb / E_mean_ion;  // λ = d * K
+  // lambda[strand*n_bp + global_bp] = per-bp direct SSB expectation
+  const n = dna.n_bp;
+  const lambda = new Float32Array(n * 2);
+  let direct_expected = 0;
+  for (let fi = 0; fi < dna.n_fibers; fi++) {
+    const fy = dna.fy[fi];
+    const fz = dna.fz[fi];
+    const base = fi * dna.n_bp_per;
+    for (let b = 0; b < dna.n_bp_per; b++) {
+      const bx = dna.x0 + b * dna.rise;
+      const vx = Math.floor((bx + half) * inv_vox);
+      if (vx < 0 || vx >= vc) continue;
+      const y0 = fy + dna.rbb0[b * 2 + 0];
+      const z0 = fz + dna.rbb0[b * 2 + 1];
+      const y1 = fy + dna.rbb1[b * 2 + 0];
+      const z1 = fz + dna.rbb1[b * 2 + 1];
+      const vy0 = Math.floor((y0 + half) * inv_vox);
+      const vz0 = Math.floor((z0 + half) * inv_vox);
+      const vy1 = Math.floor((y1 + half) * inv_vox);
+      const vz1 = Math.floor((z1 + half) * inv_vox);
+      if (vy0 >= 0 && vy0 < vc && vz0 >= 0 && vz0 < vc) {
+        const d = dose_arr[(vz0 * vc + vy0) * vc + vx] / 100.0;
+        const l = d * K;
+        lambda[base + b] = l;
+        direct_expected += l;
+      }
+      if (vy1 >= 0 && vy1 < vc && vz1 >= 0 && vz1 < vc) {
+        const d = dose_arr[(vz1 * vc + vy1) * vc + vx] / 10.0;
+        const l = d * K;
+        lambda[n + base + b] = l;
+        direct_expected += l;
+      }
+    }
+  }
+  return { direct_ssb: direct_expected, lambda };
+}
+
+// Spatially-local expected DSB calculation.
+//
+// For each fiber, build a per-bp hit density from
+//    density[b] = lambda_direct[b] + indicator(indirect hit at bp b)
+// for each strand separately. Then expected DSB = sum over bp b on strand 0
+// of density_s0[b] × (sum of density_s1[b'] for b' in [b-W, b+W]).
+//
+// This is spatially CORRELATED — a direct+indirect hit at the same bp on
+// opposite strands contributes directly, and the window captures local
+// clustering from the same track.
+function expectedDSBLocal(dna, direct_lambda, indirect_hits) {
+  const W = 10;                              // ±bp window
+  const n = dna.n_bp;
+  const n_per = dna.n_bp_per;
+  let dsb_expected = 0;
+  // Per-fiber scratch arrays
+  const s0 = new Float32Array(n_per);
+  const s1 = new Float32Array(n_per);
+  for (let fi = 0; fi < dna.n_fibers; fi++) {
+    const base = fi * n_per;
+    let sum_s0 = 0, sum_s1 = 0;
+    for (let b = 0; b < n_per; b++) {
+      const v0 = direct_lambda[base + b] + (indirect_hits[base + b] === 1 ? 1 : 0);
+      const v1 = direct_lambda[n + base + b] + (indirect_hits[n + base + b] === 1 ? 1 : 0);
+      s0[b] = v0;
+      s1[b] = v1;
+      sum_s0 += v0;
+      sum_s1 += v1;
+    }
+    if (sum_s0 === 0 || sum_s1 === 0) continue;
+    // Sliding window sum on strand 1
+    let window_s1 = 0;
+    for (let b = 0; b <= Math.min(W, n_per - 1); b++) window_s1 += s1[b];
+    for (let b = 0; b < n_per; b++) {
+      // Maintain window sum = sum(s1[max(0,b-W)..min(n_per-1,b+W)])
+      // (Already correct at b=0 if we initialized above.)
+      dsb_expected += s0[b] * window_s1;
+      // Advance window: remove b-W (if within range) and add b+1+W (if within)
+      const lo_out = b - W;        // will leave on next iter after b+1
+      const hi_in = b + 1 + W;
+      if (hi_in < n_per) window_s1 += s1[hi_in];
+      if (lo_out >= 0)   window_s1 -= s1[lo_out];
+    }
+  }
+  return dsb_expected;
+}
+
+// Cluster SSBs on both strands into DSBs. Two strand-opposite SSBs within
+// ±10 bp of each other (on the same fiber) form a DSB.
+//
+// Returns both an integer DSB count (greedy pairing) and an expected-value
+// DSB count. The expected formula is derived for uniform random SSB
+// placement on strands of length L bp within a single fiber:
+//   E[DSB_per_fiber] = 1 - (1 - (2*W+1)/L)^(k0*k1)
+// where W=10 is the ±bp window and k0, k1 are strand hit counts. For low
+// density (k*W/L << 1), this simplifies to k0*k1*(2W+1)/L. We use this for
+// yield reporting since integer DSB is stochastic and often 0 at low stats.
+function clusterDSB(dna, hits) {
+  const n = dna.n_bp;
+  const n_per = dna.n_bp_per;
+  const W = 10;                          // ±bp clustering window
+  const window_bp = 2 * W + 1;
+  let dsb_int = 0;
+  let dsb_expected = 0;
+  let ssb0_tot = 0, ssb1_tot = 0;
+  // Fast fiber-level presence check: sum hits per fiber in one pass. Allows
+  // skipping empty fibers which dominate when the target spans the full box.
+  const fiber_has_any = new Uint8Array(dna.n_fibers);
+  for (let fi = 0; fi < dna.n_fibers; fi++) {
+    const base = fi * n_per;
+    for (let b = 0; b < n_per; b++) {
+      if (hits[base + b] || hits[base + b + n]) { fiber_has_any[fi] = 1; break; }
+    }
+  }
+  for (let fi = 0; fi < dna.n_fibers; fi++) {
+    if (fiber_has_any[fi] === 0) continue;
+    const base = fi * n_per;
+    const s0_bps = [];
+    const s1_bps = [];
+    for (let b = 0; b < n_per; b++) {
+      if (hits[base + b] === 1) s0_bps.push(b);
+      if (hits[base + b + n] === 1) s1_bps.push(b);
+    }
+    const k0 = s0_bps.length, k1 = s1_bps.length;
+    ssb0_tot += k0;
+    ssb1_tot += k1;
+    // Integer clustering: greedy pairing within ±W bp
+    const used1 = new Uint8Array(k1);
+    let j_lo = 0;
+    for (const b0 of s0_bps) {
+      while (j_lo < k1 && s1_bps[j_lo] < b0 - W) j_lo++;
+      for (let j = j_lo; j < k1 && s1_bps[j] <= b0 + W; j++) {
+        if (used1[j] === 0) { used1[j] = 1; dsb_int++; break; }
+      }
+    }
+    // Expected-value DSB for this fiber (uniform random approximation)
+    if (k0 > 0 && k1 > 0 && n_per > 0) {
+      // Probability any single (s0, s1) pair falls within the window
+      const p_pair = Math.min(1, window_bp / n_per);
+      // Expected DSB ≈ 1 - (1 - p_pair)^(k0*k1)
+      // For low density this ≈ k0*k1*p_pair
+      const n_pairs = k0 * k1;
+      const p_no_dsb = Math.pow(1 - p_pair, n_pairs);
+      dsb_expected += 1 - p_no_dsb;
+    }
+  }
+  return { dsb: dsb_int, dsb_expected, ssb0: ssb0_tot, ssb1: ssb1_tot };
+}
+
+// Render a 2D projection of the 128³ dose voxel grid to a canvas.
+// axis = 'z' sums dose along Z → XY image; axis = 'x' sums along X → YZ image.
+// Uses log colormap (magma-inspired) to handle the ~6 orders of magnitude
+// between track-core dose and halo dose. Zooms to the non-empty bounding box
+// with a small border so the concentrated track cluster fills the canvas.
+function renderDoseProjection(canvasId, axis) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas || !G.last_dose) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+  const vc = VC;
+  const dose = G.last_dose;
+  // box_nm stored by runAtEnergy is the half-width (matches WGSL p.box).
+  const box_nm = G.last_dose_box || 15000;
+  const vox_nm = 2 * box_nm / vc;
+  // Project into a vc×vc image. rows = outer axis ("y-like"), cols = inner axis ("x-like").
+  const proj = new Float32Array(vc * vc);
+  let max_v = 0;
+  let row_label, col_label;
+  if (axis === 'z') {
+    // Sum over z: image[row=y, col=x] = Σz dose[z, y, x]
+    row_label = 'Y'; col_label = 'X';
+    for (let y = 0; y < vc; y++) {
+      for (let x = 0; x < vc; x++) {
+        let s = 0;
+        for (let z = 0; z < vc; z++) s += dose[(z * vc + y) * vc + x];
+        proj[y * vc + x] = s;
+        if (s > max_v) max_v = s;
+      }
+    }
+  } else {
+    // Sum over x: image[row=z, col=y] = Σx dose[z, y, x]
+    row_label = 'Z'; col_label = 'Y';
+    for (let z = 0; z < vc; z++) {
+      for (let y = 0; y < vc; y++) {
+        let s = 0;
+        for (let x = 0; x < vc; x++) s += dose[(z * vc + y) * vc + x];
+        proj[z * vc + y] = s;
+        if (s > max_v) max_v = s;
+      }
+    }
+  }
+  if (max_v === 0) {
+    ctx.fillStyle = '#8888a0';
+    ctx.font = '10px monospace';
+    ctx.fillText('(no dose)', 10, 30);
+    return;
+  }
+  // Find non-empty bounding box (threshold at 0.1% of peak to strip noise voxels).
+  const thr = max_v * 0.001;
+  let r0 = vc, r1 = -1, c0 = vc, c1 = -1;
+  for (let r = 0; r < vc; r++) {
+    for (let c = 0; c < vc; c++) {
+      if (proj[r * vc + c] > thr) {
+        if (r < r0) r0 = r;
+        if (r > r1) r1 = r;
+        if (c < c0) c0 = c;
+        if (c > c1) c1 = c;
+      }
+    }
+  }
+  if (r1 < 0) { r0 = 0; r1 = vc - 1; c0 = 0; c1 = vc - 1; }
+  // Pad and make square so aspect ratio is preserved.
+  const pad = 4;
+  r0 = Math.max(0, r0 - pad); r1 = Math.min(vc - 1, r1 + pad);
+  c0 = Math.max(0, c0 - pad); c1 = Math.min(vc - 1, c1 + pad);
+  const rh = r1 - r0 + 1, cw = c1 - c0 + 1;
+  const side = Math.max(rh, cw);
+  const rc = Math.floor((r0 + r1) / 2), cc = Math.floor((c0 + c1) / 2);
+  const rs = Math.max(0, Math.min(vc - side, rc - (side >> 1)));
+  const cs = Math.max(0, Math.min(vc - side, cc - (side >> 1)));
+  // Log scale: log(v+1) / log(max+1)
+  const log_max = Math.log(max_v + 1);
+  const img = ctx.createImageData(side, side);
+  for (let r = 0; r < side; r++) {
+    for (let c = 0; c < side; c++) {
+      const src = (rs + r) * vc + (cs + c);
+      const v = (rs + r < vc && cs + c < vc) ? proj[src] : 0;
+      const t = v > 0 ? Math.log(v + 1) / log_max : 0;
+      // Magma-ish colormap (black → purple → red → yellow → white)
+      let rr, gg, bb;
+      if (t < 0.25) {
+        const s = t / 0.25;
+        rr = Math.round(s * 90); gg = Math.round(s * 10); bb = Math.round(s * 120 + 10);
+      } else if (t < 0.5) {
+        const s = (t - 0.25) / 0.25;
+        rr = Math.round(90 + s * 130); gg = Math.round(10 + s * 30); bb = Math.round(130 - s * 40);
+      } else if (t < 0.75) {
+        const s = (t - 0.5) / 0.25;
+        rr = Math.round(220 + s * 30); gg = Math.round(40 + s * 120); bb = Math.round(90 - s * 80);
+      } else {
+        const s = (t - 0.75) / 0.25;
+        rr = Math.round(250 + s * 5); gg = Math.round(160 + s * 95); bb = Math.round(10 + s * 245);
+      }
+      const i = (r * side + c) * 4;
+      img.data[i] = rr; img.data[i + 1] = gg; img.data[i + 2] = bb; img.data[i + 3] = 255;
+    }
+  }
+  const off = document.createElement('canvas');
+  off.width = side; off.height = side;
+  off.getContext('2d').putImageData(img, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(off, 0, 0, W, H);
+  // Overlay scale info
+  const crop_nm = side * vox_nm;
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(0, 0, W, 14);
+  ctx.fillRect(0, H - 14, W, 14);
+  ctx.fillStyle = '#cfe';
+  ctx.font = '10px monospace';
+  ctx.fillText(`${col_label}↔${row_label}  ${crop_nm.toFixed(0)} nm`, 4, 10);
+  ctx.fillText(`peak ${(max_v/100).toFixed(0)} eV/vox  log`, 4, H - 4);
+}
+
+function classify(ratio) {
+  if (ratio >= 0.9 && ratio <= 1.1) return 'ok';
+  if (ratio >= 0.5 && ratio <= 2.0) return 'meh';
+  return 'bad';
+}
+
+async function runValidation() {
+  $('run').disabled = true; $('reset').disabled = true;
+  $('tb').innerHTML = '';
+  try {
+    const np = parseInt($('np').value);
+    const box = parseFloat($('box').value);
+    const ce  = parseFloat($('cut').value);
+
+    if (!G.dev) { if (!await initGPU()) return; }
+    await makePipes(np);
+    lg(`Running ${np} primaries at ${ESTAR.length} energies, box=${box}nm, cutoff=${ce}eV`, 'data');
+
+    // DSB target matches the current primary start configuration:
+    // origin-start → concentrated target at track core for high SSB capture.
+    // For distributed-start runs, expand this to a full-box grid (see
+    // start_half comment in runAtEnergy). 21×21 at 150 nm spacing covers
+    // the ~2 μm 10 keV track cloud densely.
+    const DNA_L = 3000;
+    const DNA_GRID_N = 21;
+    const DNA_SPACING = 150;
+    const dna = buildDNATarget(DNA_L, DNA_GRID_N, DNA_SPACING);
+    lg(`DNA target: ${dna.n_fibers} fibers × ${dna.n_bp_per} bp = ${(dna.n_bp/1e6).toFixed(2)} Mbp (${DNA_L} nm, ${DNA_GRID_N}² grid, ${DNA_SPACING} nm spacing)`, 'data');
+    // Deterministic RNG for SSB rolls (so numbers are reproducible per run).
+    let ssb_seed = 0x12345678 >>> 0;
+    const ssb_rng = () => {
+      ssb_seed = ((Math.imul(ssb_seed, 1664525) + 1013904223) >>> 0);
+      return ssb_seed / 4294967296;
+    };
+
+    for (const ref of ESTAR) {
+      const r = await runAtEnergy(ref.E, np, box, ce, dna);
+      // Use total_path (full thermalization, includes vibrational regime) vs ESTAR CSDA.
+      const csda_ratio = r.mean_total / ref.csda;
+      const sp_ratio   = r.mean_sp / ref.sp;
+
+      // DSB scoring (only when chemistry ran and dose cache is populated).
+      let ssb_dir = 0, ssb_ind = 0, dsb = 0, dsb_per_gy_gbp = 0;
+      let dsb_log = '';
+      if (r.chem_result && r.rad_buf_final && ref.E === 10000) {
+        const cr = r.chem_result;
+        // Indirect: loop surviving OH at t=1μs (integer hits).
+        // Skip if worker didn't return position data (chem_pos_final is null).
+        const indirect = (cr.chem_pos_final && cr.chem_alive_final)
+          ? scoreIndirectSSB(dna, cr.chem_pos_final, cr.chem_alive_final, cr.chem_n, ssb_rng)
+          : { hits: new Uint8Array(dna.n_bp * 2), n: 0, ssb0: 0, ssb1: 0, ssb_count: 0, in_reach: 0, candidates: 0 };
+        // Direct: event-level scoring from ionization-site positions in rad_buf.
+        // This captures nm-scale clustering that voxelized dose smears out.
+        const direct = scoreDirectSSB_events(dna, r.rad_buf_final, r.rad_n_stored, ssb_rng);
+        // Combine direct + indirect hit arrays by bit-OR
+        const hits_combined = new Uint8Array(dna.n_bp * 2);
+        for (let i = 0; i < hits_combined.length; i++) {
+          hits_combined[i] = (direct.hits[i] | indirect.hits[i]) ? 1 : 0;
+        }
+        const clust = clusterDSB(dna, hits_combined);
+        dsb = clust.dsb;
+        ssb_dir = direct.ssb_count;
+        ssb_ind = indirect.ssb0 + indirect.ssb1;
+        // Physically meaningful metric: per-ionization-event yields are
+        // INTRINSIC to the physics and don't depend on target geometry.
+        // DSB count is still geometry-dependent but the ratio DSB/SSB is
+        // a track-structure property.
+        const n_ions_total = r.mean_ions * r.n_therm + r.sec_tertiary_ions;
+        const box_nm_cur = G.last_dose_box || box;
+        // box_nm is half-width; full-box edge length = 2*box_nm
+        const dose_box_Gy = (r.total_deposited_eV || 0) * 1.602e-19 / (Math.pow(2 * box_nm_cur * 1e-9, 3) * 1000);
+        const target_Gbp = dna.n_bp * 1e-9;
+        dsb_per_gy_gbp = dose_box_Gy > 0 ? dsb / (dose_box_Gy * target_Gbp) : 0;
+        const yield_ssb_dir_per = dose_box_Gy > 0 ? ssb_dir / (dose_box_Gy * target_Gbp) : 0;
+        const yield_ssb_ind_per = dose_box_Gy > 0 ? ssb_ind / (dose_box_Gy * target_Gbp) : 0;
+        const ssb_per_event = n_ions_total > 0 ? (ssb_dir + ssb_ind) / n_ions_total : 0;
+        dsb_log = `    DAMAGE: SSB_dir=${ssb_dir}  SSB_ind=${ssb_ind}  DSB=${dsb}  (DSB/SSB=${((ssb_dir+ssb_ind)>0 ? dsb/(ssb_dir+ssb_ind) : 0).toFixed(3)})  box_dose=${dose_box_Gy.toFixed(3)} Gy  target=${(dna.n_bp/1e6).toFixed(1)} Mbp  reach_dir=${direct.in_reach} reach_ind=${indirect.in_reach}  kernel_hits=${r.kernel_dna_hits || 0}`;
+      }
+
+      const row = `
+        <tr>
+          <td>${r.E >= 1000 ? (r.E/1000).toFixed(0)+' keV' : r.E+' eV'}</td>
+          <td>${r.n_therm}</td>
+          <td>${r.n_esc}</td>
+          <td>${r.mean_total.toFixed(1)}</td>
+          <td>${ref.csda}</td>
+          <td class="${classify(csda_ratio)}">${csda_ratio.toFixed(2)}×</td>
+          <td>${r.mean_prod.toFixed(1)}</td>
+          <td>${r.mean_sp.toFixed(2)}</td>
+          <td>${ref.sp}</td>
+          <td class="${classify(sp_ratio)}">${sp_ratio.toFixed(2)}×</td>
+          <td>${r.mean_ions.toFixed(1)}</td>
+          <td>${r.sec_per_pri.toFixed(1)}${r.sec_dropped > 0 ? ' ⚠' + r.sec_dropped : ''}</td>
+          <td class="${classify(r.cons_ratio)}">${(r.cons_ratio*100).toFixed(1)}%</td>
+          <td>${r.G_OH.toFixed(2)}</td>
+          <td>${r.G_eaq.toFixed(2)}</td>
+          <td>${r.G_H.toFixed(2)}</td>
+          <td>${ssb_dir ? ssb_dir.toFixed(1) : '—'}</td>
+          <td>${ssb_ind ? ssb_ind : '—'}</td>
+          <td>${dsb ? dsb : '—'}</td>
+          <td>${dsb_per_gy_gbp ? dsb_per_gy_gbp.toFixed(2) : '—'}</td>
+          <td>${r.dt.toFixed(0)}</td>
+        </tr>`;
+      $('tb').insertAdjacentHTML('beforeend', row);
+      if (dsb_log) lg(dsb_log, 'data');
+      lg(`  E=${r.E} eV: CSDA=${r.mean_total.toFixed(1)}nm (${csda_ratio.toFixed(2)}×) ions/pri=${r.mean_ions.toFixed(1)} sec/pri=${r.sec_per_pri.toFixed(1)} G_init(OH/eaq/H)=${r.G_OH.toFixed(2)}/${r.G_eaq.toFixed(2)}/${r.G_H.toFixed(2)} rad_n=${r.rad_n_stored}${r.rad_dropped > 0 ? ' ⚠'+r.rad_dropped+'dropped' : ''} E_cons=${(r.cons_ratio*100).toFixed(1)}%`, 'data');
+      if (r.chem_result) {
+        const cr = r.chem_result;
+        lg(`    chemistry V3b: N=${cr.chem_n} radicals, ${cr.t_wall.toFixed(0)}ms total`, 'data');
+        lg(`    ${'t'.padEnd(8)} ${'G(OH)'.padStart(7)} ${'G(eaq)'.padStart(7)} ${'G(H)'.padStart(7)} ${'G(H2O2)'.padStart(8)} ${'G(H2)'.padStart(7)}`, 'data');
+        for (const cp of cr.timeline) {
+          lg(`    ${cp.label.padEnd(8)} ${cp.G_OH.toFixed(3).padStart(7)} ${cp.G_eaq.toFixed(3).padStart(7)} ${cp.G_H.toFixed(3).padStart(7)} ${cp.G_H2O2.toFixed(3).padStart(8)} ${cp.G_H2.toFixed(3).padStart(7)}`, 'data');
+        }
+        lg(`    Karamitros 2011 reference (1 μs): G(OH)=2.5 G(eaq)=2.5 G(H)=0.57 G(H2O2)=0.73 G(H2)=0.42`, 'data');
+      }
+    }
+    lg('Validation run complete.', 'ok');
+    // Render dose projections from cached 10 keV dose grid
+    renderDoseProjection('dose_xy', 'z');
+    renderDoseProjection('dose_yz', 'x');
+  } catch (e) {
+    lg('Error: ' + e.message, 'err');
+    console.error(e);
+  } finally {
+    $('run').disabled = false; $('reset').disabled = false;
+  }
+}
+
+$('run').onclick = runValidation;
+$('reset').onclick = () => { $('tb').innerHTML = ''; $('log').innerHTML = ''; };
+
+lg('Geant4-DNA validation harness v0 (Stage 1 — primary tracking only, no secondaries)');
+lg('Click "Run validation" to measure CSDA range and stopping power vs NIST ESTAR.');
+</script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+{
+  "description": "Reference values from Geant4 11.3.0 dnaphysics + chem6, DNA_Opt2, 10 keV electrons",
+  "track_structure": {
+    "note": "From dnaphysics ntuple, 4096 events",
+    "ions_per_primary": 196.5,
+    "excitations_per_primary": 3.3,
+    "elastic_per_primary": 202.8,
+    "vibrational_per_primary": 10.4,
+    "csda_nm": 2756.5,
+    "energy_deposited_eV": 9999.7,
+    "mean_W_transfer_eV": 52.2,
+    "sigma_ion_10keV": 0.001144,
+    "sigma_total_10keV": 0.001780,
+    "mfp_10keV_nm": 16.82
+  },
+  "chemistry_timeline": {
+    "note": "From chem6 IRT, 1000 events, 10 keV, DNA_Opt2 + G4EmDNAChemistry_option3",
+    "checkpoints": [
+      {"t_ns": 0.001, "G_OH": 5.054, "G_eaq": 4.096, "G_H": 0.920, "G_H2O2": 0.045, "G_H2": 0.252},
+      {"t_ns": 0.01,  "G_OH": 4.934, "G_eaq": 4.076, "G_H": 0.893, "G_H2O2": 0.089, "G_H2": 0.259},
+      {"t_ns": 0.1,   "G_OH": 4.494, "G_eaq": 3.977, "G_H": 0.812, "G_H2O2": 0.241, "G_H2": 0.280},
+      {"t_ns": 1.0,   "G_OH": 3.572, "G_eaq": 3.636, "G_H": 0.729, "G_H2O2": 0.536, "G_H2": 0.326},
+      {"t_ns": 10,    "G_OH": 2.700, "G_eaq": 2.935, "G_H": 0.746, "G_H2O2": 0.733, "G_H2": 0.430},
+      {"t_ns": 100,   "G_OH": 2.121, "G_eaq": 2.197, "G_H": 0.773, "G_H2O2": 0.794, "G_H2": 0.556}
+    ]
+  },
+  "karamitros_2011": {
+    "note": "Published reference values at 1 μs",
+    "G_OH": 2.50,
+    "G_eaq": 2.50,
+    "G_H": 0.57,
+    "G_H2O2": 0.73,
+    "G_H2": 0.42
+  }
+}

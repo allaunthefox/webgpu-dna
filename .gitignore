@@ -1,0 +1,20 @@
+node_modules/
+dist/
+dumps/
+*.log
+.DS_Store
+
+# Local editor/agent config
+.claude/
+.vscode/
+.idea/
+
+# Raw Geant4-DNA reference data (245 MB). Download from
+# https://geant4-data.web.cern.ch/datasets/ and extract as data/g4emlow
+# to regenerate public/cross_sections.wgsl via `npm run convert`.
+data/
+
+# Vercel / local tool caches
+.vercel
+.turbo
+

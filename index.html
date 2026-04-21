@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WebGPU Geant4-DNA — Modular Build</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@400;600&display=swap');
+  :root{--bg:#0a0a0f;--sf:#12121a;--s2:#1a1a26;--bd:#2a2a3a;--tx:#e8e8f0;--dm:#8888a0;--ac:#00d4aa;--bad:#f44;--ok:#4f4;--mn:'JetBrains Mono',monospace;--sn:'Space Grotesk',system-ui,sans-serif}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--tx);font-family:var(--sn);padding:20px;max-width:1100px;margin:0 auto}
+  h1{font-size:18px;font-weight:600;margin-bottom:4px}
+  h1 span{color:var(--ac);font-family:var(--mn);font-size:12px;margin-left:8px;font-weight:400}
+  p.sub{font-size:11px;color:var(--dm);margin-bottom:16px}
+  .btn{background:var(--ac);color:var(--bg);border:none;padding:8px 16px;border-radius:4px;font-family:var(--mn);font-size:11px;font-weight:600;cursor:pointer;margin-right:8px}
+  .btn:disabled{opacity:0.4;cursor:not-allowed}
+  .btn.bs{background:var(--s2);color:var(--tx);border:1px solid var(--bd)}
+  .controls{margin-bottom:16px;padding:10px;background:var(--sf);border:1px solid var(--bd);border-radius:4px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .controls label{font-size:10px;font-family:var(--mn);color:var(--dm)}
+  .controls input[type=number]{background:var(--s2);color:var(--tx);border:1px solid var(--bd);padding:4px 6px;font-family:var(--mn);font-size:10px;width:80px;border-radius:3px}
+  table{width:100%;border-collapse:collapse;font-family:var(--mn);font-size:10px;margin-top:12px}
+  th,td{text-align:right;padding:6px 8px;border-bottom:1px solid var(--bd)}
+  th{color:var(--dm);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;font-size:9px;background:var(--sf)}
+  td:first-child,th:first-child{text-align:left}
+  .ok{color:var(--ok)}.bad{color:var(--bad)}.meh{color:#fa0}
+  .log{background:var(--sf);border:1px solid var(--bd);border-radius:4px;padding:10px;font-family:var(--mn);font-size:9px;color:var(--dm);max-height:240px;overflow-y:auto;line-height:1.4;margin-top:16px}
+  .log .ok{color:var(--ac)}.log .err{color:var(--bad)}.log .data{color:#8ac}
+  .nw{display:none;color:var(--bad);padding:20px;text-align:center}
+  .nw.show{display:block}
+  .note{font-size:10px;color:var(--dm);margin-top:12px;line-height:1.5}
+  .note code{background:var(--s2);padding:1px 4px;border-radius:2px;color:var(--tx);font-family:var(--mn)}
+</style>
+</head>
+<body>
+<h1>WebGPU Geant4-DNA <span>modular TypeScript build</span></h1>
+<p class="sub">Modular TS port of the monolithic harness. Runs mono-energetic primary electrons across 8 ESTAR energies, measures CSDA &amp; stopping power, runs Karamitros IRT chemistry at 10 keV, and scores SSB/DSB on a 21×21 B-DNA fiber grid.</p>
+
+<div class="nw" id="nw">WebGPU not available in this browser.</div>
+
+<div class="controls">
+  <button class="btn" id="run">Run validation</button>
+  <button class="btn bs" id="reset">Reset</button>
+  <label>N/energy <input type="number" id="np" value="4096" min="1024" max="32768" step="1024"></label>
+  <label>Box (nm) <input type="number" id="box" value="15000" min="1000" max="50000" step="1000"></label>
+  <label>Cutoff (eV) <input type="number" id="cut" value="7.4" min="1" max="100" step="0.1"></label>
+</div>
+
+<table id="results">
+  <thead>
+    <tr>
+      <th>Energy</th>
+      <th>Therm</th>
+      <th>Esc</th>
+      <th>CSDA Total (nm)</th>
+      <th>ESTAR CSDA</th>
+      <th>Ratio</th>
+      <th>Prod (nm)</th>
+      <th>dE/dx (eV/nm)</th>
+      <th>ESTAR SP</th>
+      <th>Ratio</th>
+      <th>Ions/pri</th>
+      <th>Sec/pri</th>
+      <th>E cons</th>
+      <th>G(OH)</th>
+      <th>G(e&#8315;aq)</th>
+      <th>G(H)</th>
+      <th>SSB dir</th>
+      <th>SSB ind</th>
+      <th>DSB</th>
+      <th>DSB/Gy/Gbp</th>
+      <th>Total ms</th>
+    </tr>
+  </thead>
+  <tbody id="tb"></tbody>
+</table>
+
+<div class="note">
+  ESTAR reference: NIST Physical Reference Data, liquid water (&rho;=1 g/cm&sup3;). Geant4-DNA's Emfietzoglou model deviates from ESTAR at E &lt; 1 keV. A ratio of 1.0&plusmn;0.1 above 3 keV is "passing". Below 1 keV, agreement within ~2&times; is expected.
+</div>
+
+<div style="display:flex;gap:12px;margin-top:16px;flex-wrap:wrap">
+  <div>
+    <canvas id="dose_xy" width="256" height="256" style="border:1px solid var(--bd);background:#000;image-rendering:pixelated"></canvas>
+    <div style="font-family:var(--mn);font-size:9px;color:var(--dm);text-align:center;margin-top:4px">
+      Dose projection (XY, sum over Z) &mdash; log colormap, 10 keV primaries
+    </div>
+  </div>
+  <div>
+    <canvas id="dose_yz" width="256" height="256" style="border:1px solid var(--bd);background:#000;image-rendering:pixelated"></canvas>
+    <div style="font-family:var(--mn);font-size:9px;color:var(--dm);text-align:center;margin-top:4px">
+      Dose projection (YZ, sum over X) &mdash; primary track direction
+    </div>
+  </div>
+</div>
+
+<div class="log" id="log"></div>
+
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

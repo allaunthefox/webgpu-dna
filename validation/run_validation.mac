@@ -1,0 +1,38 @@
+# WebGPU Geant4-DNA validation macro
+# Matches the parameters used in public/geant4dna.html exactly:
+#   - 10 keV electrons in liquid water
+#   - Emfietzoglou ionization/excitation (DNA_Opt2)
+#   - Champion elastic
+#   - Sanche vibrational
+#   - Origin start, isotropic direction
+#   - 4096 primaries
+
+/tracking/verbose 0
+/run/verbose 0
+/control/verbose 0
+
+# Single-threaded for reproducible ntuple output
+/run/numberOfThreads 1
+
+# Material: liquid water
+/dna/test/setMat G4_WATER
+
+# World volume: 30 μm cube (half-width 15000 nm = 15 μm)
+/dna/test/setSize 30 um
+
+# Physics: DNA_Opt2 = Emfietzoglou ionization + excitation,
+# Champion elastic, Sanche vibrational
+/dna/test/addPhysics DNA_Opt2
+
+# No radioactive decay (electrons only)
+# /dna/test/addPhysics raddecay
+
+# Initialize
+/run/initialize
+
+# Electron gun
+/gun/particle e-
+/gun/energy 10 keV
+
+# Run 4096 primaries (matching our WebGPU N=4096)
+/run/beamOn 4096
