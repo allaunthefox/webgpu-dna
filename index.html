@@ -84,9 +84,14 @@
   .compare thead th.new{color:var(--ac)}
   .compare tbody tr:last-child td{border-bottom:none}
   .compare tbody tr:hover td{background:rgba(0,212,170,0.03)}
-  .compare td.aspect{font-family:var(--mn);font-size:11px;color:var(--dm);font-weight:600;letter-spacing:0.03em;width:22%;text-transform:uppercase}
-  .compare td.old{color:var(--tx2);width:39%}
-  .compare td.new{color:var(--tx);width:39%}
+  /* Column widths via <colgroup> — table-layout:fixed requires widths on the
+     first row or <col>; putting them on <td> alone is ignored. */
+  .compare col.c-aspect{width:22%}
+  .compare col.c-old{width:39%}
+  .compare col.c-new{width:39%}
+  .compare td.aspect{font-family:var(--mn);font-size:11px;color:var(--dm);font-weight:600;letter-spacing:0.03em;text-transform:uppercase}
+  .compare td.old{color:var(--tx2)}
+  .compare td.new{color:var(--tx)}
   .compare td.new strong{color:var(--ac);font-weight:600}
   .compare td .hint{font-size:11px;color:var(--dm);margin-top:4px}
   @media (max-width:720px){
@@ -341,6 +346,11 @@
 
   <div class="compare">
     <table>
+      <colgroup>
+        <col class="c-aspect">
+        <col class="c-old">
+        <col class="c-new">
+      </colgroup>
       <thead>
         <tr>
           <th>&nbsp;</th>
