@@ -1,6 +1,6 @@
 # WebGPU Geant4-DNA
 
-A WebGPU port of [Geant4-DNA](https://geant4-dna.in2p3.fr/) — CERN's Monte Carlo track-structure code for radiobiology — running entirely in the browser.
+A WebGPU port of [Geant4-DNA](https://geant4-dna.in2p3.fr/) — the CNRS/IN2P3-coordinated Monte Carlo track-structure toolkit for radiobiology — running entirely in the browser.
 
 One GPU thread per primary electron, full particle history in a single fused compute dispatch, Karamitros 2011 Independent-Reaction-Time chemistry in a Web Worker, and SSB/DSB scoring on a 21×21 B-DNA fiber grid at 10 keV.
 
@@ -31,7 +31,7 @@ npm run lint
 npm run build          # dist/
 ```
 
-Requires a WebGPU-capable browser (Chrome 113+, Safari TP, Edge, or Firefox with `dom.webgpu.enabled`).
+Requires a WebGPU-capable browser. WebGPU ships on-by-default in Chrome / Edge 113+ desktop (Chrome 121+ Android), Safari 26+ (macOS Tahoe, iOS / iPadOS 26, Sep 2025), and Firefox 141+ Windows / 145+ macOS. Linux Firefox and Android Firefox still need `dom.webgpu.enabled` in `about:config`.
 
 ## Project layout
 
@@ -60,7 +60,8 @@ The committed `public/cross_sections.wgsl` (1.3 MB) is generated from the G4EMLO
 
 ```bash
 # Download G4EMLOW from https://geant4-data.web.cern.ch/datasets/
-# (e.g. G4EMLOW8.6.1.tar.gz) and extract so that data/g4emlow/dna/ exists.
+# (current: G4EMLOW.8.8.tar.gz, shipped with Geant4 11.4.1). Extract so that
+# data/g4emlow/dna/ exists, then:
 npm run convert
 ```
 
