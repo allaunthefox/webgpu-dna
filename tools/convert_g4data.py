@@ -480,14 +480,13 @@ def main():
 
     wgsl_text = "\n".join(output)
 
-    # Save to both locations: src/ (canonical source), public/ (served by dev server)
-    src_out = Path(__file__).parent.parent / "src" / "cross_sections.wgsl"
+    # Single authoritative location: public/ is served by Vite at /cross_sections.wgsl
+    # and fetched by src/shaders/loader.ts. No other copies.
     pub_out = Path(__file__).parent.parent / "public" / "cross_sections.wgsl"
-    for outpath in (src_out, pub_out):
-        outpath.parent.mkdir(exist_ok=True)
-        with open(outpath, 'w') as f:
-            f.write(wgsl_text)
-        print(f"\nWrote: {outpath} ({len(wgsl_text)} bytes)")
+    pub_out.parent.mkdir(exist_ok=True)
+    with open(pub_out, 'w') as f:
+        f.write(wgsl_text)
+    print(f"\nWrote: {pub_out} ({len(wgsl_text)} bytes)")
     
     # Also print validation
     print(f"\n--- Validation ---")

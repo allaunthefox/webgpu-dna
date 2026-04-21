@@ -19,7 +19,7 @@ One GPU thread per primary electron, full particle history in a single fused com
 
 ¹ G(OH) / G(e⁻aq) at 10 keV LET are inherently below the Karamitros 2011 low-LET (~1 MeV) reference — track-core density drives higher radical recombination.
 
-46 / 46 unit + integration tests pass. See `validation/compare.py` for the full side-by-side against a Geant4-DNA ntuple.
+46 unit tests pass across 7 files. See `validation/compare.py` for the full side-by-side against a Geant4-DNA ntuple.
 
 ## Quick start
 
@@ -46,7 +46,8 @@ src/
 ├── app.ts         runValidation orchestrator
 └── main.ts        entry point
 
-tests/             Vitest unit + integration (46 tests)
+tests/unit/        Vitest unit tests (46 across 7 files)
+tests/fixtures/    Geant4-DNA reference numbers (JSON)
 public/            Generated cross_sections.wgsl, irt-worker.js, monolithic reference HTML
 tools/             Python + Node helpers (G4EMLOW converter, IRT driver)
 validation/        Geant4-DNA comparison harness (compare.py, analyze_g4.py)
@@ -68,7 +69,7 @@ npm run convert
 ## What's implemented
 
 - **Physics:** Born ionization (5 shells, data-driven CDF sampling), Emfietzoglou excitation (5 levels, dissociative branching 0.65 / 0.55 / 0.80), Champion tabulated elastic angular CDF (< 200 eV), screened-Rutherford elastic (> 200 eV), Sanche 9-mode vibrational (2–100 eV), full primary-momentum conservation.
-- **Chemistry:** Karamitros 2011 9-reaction IRT table (Type 0 Smoluchowski), 2.0 nm mother displacement, species-specific product displacement, e⁻aq thermalization at 1.7 eV, H₂O₂ / OH⁻ tracking with re-pairing.
+- **Chemistry:** Karamitros 2011 9-reaction IRT in a Web Worker (Smoluchowski TDC + Onsager-screened PDC for charged pairs, G4EmDNAChemistry_option1). 2.0 nm mother displacement, species-specific product displacement, e⁻aq thermalization at 1.7 eV, H₂O₂ / OH⁻ tracked as reactive products with full re-pairing.
 - **DNA scoring:** Event-level direct SSB from `rad_buf` ionization sites, indirect SSB from diffused OH at 1 μs, greedy ±10 bp DSB clustering, kernel-level backbone hit counter as a cross-check.
 - **Grid target:** 21×21 parallel B-DNA fibers × 3 μm × 150 nm spacing = 3.89 Mbp.
 

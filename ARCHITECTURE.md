@@ -1,55 +1,74 @@
 # WebGPU Geant4-DNA Architecture
 
-## Core Design Decision
+## Core design decision
 
 Geant4 tracks one particle at a time, sequentially. We invert this:
 
 - **Phase A (primaries):** 1 dispatch, 1 GPU thread per primary. Each thread runs the full particle history in a loop — no per-step dispatch overhead. This is "kernel fusion": the entire track-structure simulation is a single `@compute` entry point.
-- **Phase B (secondaries):** Wavefront stepping. 1 dispatch per physics step, all secondaries advance in parallel. Can't fuse because secondary count isn't known until Phase A completes.
-- **Phase C (chemistry):** 4 dispatches per timestep (diffuse → clear_hash → build_hash → react), repeated 133 times across 7 time checkpoints from 0.1 ps to 1 μs.
+- **Phase B (secondaries):** wavefront stepping. 1 dispatch per physics step, all secondaries advance in parallel. Can't fuse because secondary count isn't known until Phase A completes.
+- **Phase C (chemistry):** Karamitros 2011 IRT chemistry. Default path is a dedicated Web Worker (`public/irt-worker.js`) running on CPU off the main thread — matches published G-values. A GPU grid-hash backend (`src/shaders/chemistry.wgsl`, 133 timesteps × 4 dispatches) is kept as a faster but less accurate alternative for CSDA-only runs; see `src/chemistry/backend.ts`.
 
-## Pipeline Overview
+## Module layout
 
 ```
-  JS Orchestrator
+src/
+├── shaders/       WGSL compute shaders (helpers, primary, secondary, chemistry)
+│   ├── helpers.wgsl       RNG, xs_all, CDF samplers, DNA-proximity helpers
+│   ├── primary.wgsl       Fused Phase A tracking kernel
+│   ├── secondary.wgsl     Wavefront Phase B stepper
+│   ├── chemistry.wgsl     GPU-resident Phase C (alt backend)
+│   └── loader.ts          Prepends cross_sections.wgsl to each kernel
+│
+├── physics/       Constants, types, DNA geometry, ESTAR reference
+├── gpu/           Device init, buffers, pipelines, Phase A/B/C dispatch
+├── chemistry/     IRT worker wiring, reaction tables, schedule, measure
+├── scoring/       SSB/DSB scoring, dose projections
+├── ui/            Results table + canvas dose projections
+├── app.ts         runValidation orchestrator (8-energy ESTAR sweep)
+└── main.ts        Entry point
+```
+
+## Pipeline overview
+
+```
+  JS Orchestrator (src/app.ts)
   runValidation() → makePipes() → runAtEnergy() × 8 energies
        │
        │  fetch('/cross_sections.wgsl')
        │  ↓ prepended to SHADER + SEC_SHADER at compile time
        │
        ▼
-  ┌──────────┐  counters[6]  ┌──────────────┐  counters[7]  ┌──────────────┐
-  │ PHASE A  │──(sec_n)────▶│   PHASE B    │──(rad_n)────▶│   PHASE C    │
-  │ Primary  │               │  Secondary   │               │  Chemistry   │
-  │ Tracking │               │  Wavefront   │               │  Diffusion   │
-  │          │               │  Stepper     │               │  + Reactions  │
-  └──────────┘               └──────────────┘               └──────┬───────┘
-   1 dispatch                 2000 dispatches                133×4  │
-   4096 threads               ~900k threads each             dispatches
-                                                                   │
-                                                                   ▼
+  ┌──────────┐  counters[6]  ┌──────────────┐  counters[7]  ┌──────────────────┐
+  │ PHASE A  │──(sec_n)────▶│   PHASE B    │──(rad_n)────▶│   PHASE C        │
+  │ Primary  │               │  Secondary   │               │  IRT worker      │
+  │ Tracking │               │  Wavefront   │               │  (default) or    │
+  │ (fused)  │               │  Stepper     │               │  GPU grid-hash   │
+  └──────────┘               └──────────────┘               └──────┬───────────┘
+   1 dispatch                 2000 dispatches                       │
+   N threads                  ~1–5M threads each                    │
+                                                                    ▼
                                                           ┌────────────────┐
                                                           │ JS Post-Process│
-                                                          │ - DSB scoring  │
+                                                          │ - SSB/DSB      │
                                                           │ - Dose project │
                                                           │ - ESTAR compare│
                                                           │ - G(t) timeline│
                                                           └────────────────┘
 
   Shared buffers across A+B:
-    dose[]      ← atomicAdd from both phases (128³ voxel grid)
-    rad_buf[]   ← append from both phases (OH/eaq/H/H3O+ positions)
-    counters[]  ← atomic species counts + append indices
+    dose[]      ← atomicAdd from both phases (128³ voxel grid, fixed-point ×100)
+    rad_buf[]   ← append from both phases (OH/eaq/H/H3O+ positions + species tag)
+    counters[]  ← atomic species counts + append indices (sec_n, rad_n)
 ```
 
-## Phase A: Primary Electron Tracking (Fused Kernel)
+## Phase A: primary electron tracking (fused kernel)
 
 One GPU thread traces one primary electron through its entire history.
 No inter-step synchronization, no per-step dispatch — pure loop.
 
 ```
-  GPU Thread (1 of 4096)
-  ──────────────────────
+  GPU Thread (1 of N primaries)
+  ──────────────────────────────
   for step = 0 to 65536:
     if E < cutoff or escaped: break
 
@@ -78,9 +97,9 @@ No inter-step synchronization, no per-step dispatch — pure loop.
     │      2. W_transfer from paired CDF (bsearch)    │
     │      3. sec_KE = W_transfer - binding           │
     │      4. E -= W_transfer (NOT bind + W_sec)      │
-    │      5. BornAngle: secondary direction           │
+    │      5. G4DNABornAngle: secondary direction      │
     │         <50eV: isotropic                        │
-    │         50-200: 10% iso + 90% forward           │
+    │         50–200: 10% iso + 90% forward           │
     │         >200: kinematic sin²θ                   │
     │      6. Primary momentum conservation            │
     │         p_final = p_inc - p_sec                  │
@@ -89,11 +108,11 @@ No inter-step synchronization, no per-step dispatch — pure loop.
     │                                                 │
     │  r < σ_ion + σ_exc?                             │
     │    YES → Excitation                             │
-    │      Level from Born per-level fractions         │
+    │      Level from Emfietzoglou per-level fractions │
     │      G4ChemDissociationChannels:                │
-    │        Lev 0 (A1B1): 65% OH+H                   │
-    │        Lev 1 (B1A1): 55% autoion, 15% 2OH+H₂   │
-    │        Lev 2-4:      50% autoionization          │
+    │        Lev 0 (A¹B₁): 65% OH+H                   │
+    │        Lev 1 (B¹A₁): 55% autoion, 15% 2OH+H₂   │
+    │        Lev 2–4:      50–80% autoionization       │
     │      Autoion → OH + eaq + H3O+ (like ionization)│
     │                                                 │
     │  r < σ_ion + σ_exc + σ_vib?                     │
@@ -103,7 +122,7 @@ No inter-step synchronization, no per-step dispatch — pure loop.
     └─────────────────────────────────────────────────┘
 ```
 
-## Phase B: Secondary Electron Wavefront Stepper
+## Phase B: secondary electron wavefront stepper
 
 Can't fuse: secondary count (sec_n) unknown until Phase A finishes.
 Instead: 2000 dispatches, each advancing all alive secondaries by 1 step.
@@ -119,73 +138,97 @@ Instead: 2000 dispatches, each advancing all alive secondaries by 1 step.
     Writes to same shared dose[], rad_buf[], counters[]
 ```
 
-## Phase C: Chemistry (Spatial Hash Diffusion-Reaction)
+## Phase C: radiolysis chemistry
+
+### Default backend — IRT Web Worker (`public/irt-worker.js`)
+
+Karamitros 2011 Independent Reaction Times. Runs on a dedicated worker thread so
+the main thread stays responsive during the full 8-energy sweep. For each pair of
+radicals, analytically computes the first-passage reaction time from positions,
+diffusion coefficients and reaction radius, then processes reactions in time
+order (retaining products, re-pairing them into the pool).
 
 ```
-  ┌─ Initialization (once) ──────────────────────────┐
-  │  sample_init: rad_buf → chem_pos (copy first N)  │
-  │  init_thermal: Gaussian displacement per species  │
-  │    OH:  σ = 0.46 nm  (RMS 0.8 nm / √3)          │
-  │    eaq: σ = 3.46 nm  (Meesungnoen 2002)          │
-  │    H:   σ = 1.30 nm  (A1B1 kinematics)           │
-  │    H3O+: 50% σ=0.46 nm, 50% no displacement      │
+  rad_buf (readback) ─▶ worker
+                          │
+                          ▼
+  ┌─ Pre-chemistry (once) ───────────────────────────┐
+  │  Mother displacement: 2.0 nm RMS per ionization   │
+  │    site (OH + H3O+ move together from their       │
+  │    shared origin before independent walks)        │
+  │  Species-specific product displacement:           │
+  │    OH:  σ = 0.46 nm   (from RMS 0.8 / √3)         │
+  │    eaq: σ = 3.46 nm   (Meesungnoen 2002 @ 1.7 eV) │
+  │    H:   σ = 1.30 nm   (A¹B₁ kinematics)           │
+  │    H3O+: 50% σ=0.46 nm, 50% co-located with OH    │
   └───────────────────────────────────────────────────┘
        │
        ▼
-  ┌─ Time loop: 7 checkpoints, 133 total steps ──────┐
+  ┌─ IRT scheduling loop ─────────────────────────────┐
+  │  For every unordered radical pair (a,b):          │
+  │    lookup reaction (a,b) in RXN_TABLE             │
+  │    if found → sample first-passage t from         │
+  │      Smoluchowski (TDC) or Onsager-screened       │
+  │      (PDC for charged pairs) distribution         │
+  │    enqueue reaction event at time t               │
   │                                                   │
-  │  For each timestep:                               │
+  │  Process events in time order:                    │
+  │    emit products, decrement species counts,       │
+  │    re-pair products against remaining pool        │
   │                                                   │
-  │  diffuse ──▶ clear_hash ──▶ build_hash ──▶ react  │
-  │    │              │              │            │    │
-  │    │ Brownian     │ Zero 8M     │ Insert    │ Walk│
-  │    │ σ=√(2Dt)     │ buckets     │ into 1.5nm│ 27  │
-  │    │ per species  │             │ cells     │ nbr │
-  │    │              │             │           │ cells│
-  │    │ D_OH  = 2.2  │             │           │     │
-  │    │ D_eaq = 4.9  │             │           │     │
-  │    │ D_H   = 7.0  │             │           │     │
-  │    │ D_H3O+= 9.0  │             │           │     │
-  │    (nm²/ns)       │             │           │     │
-  │                                                   │
-  │  After each checkpoint: count_alive → G(t)        │
-  │                                                   │
-  │  Reactions (Geant4 G4EmDNAChemistry rates):       │
-  │    OH+OH   → H₂O₂  k=4.4e9   R=0.44 pc=0.376    │
-  │    OH+eaq  → OH⁻    k=2.95e10 R=0.57 pc=0.980    │
-  │    OH+H    → H₂O    k=1.44e10 R=0.45 pc=0.511    │
-  │    eaq+eaq → H₂     k=5.0e9   R=0.54 pc=0.125    │
-  │    eaq+H   → H₂     k=2.65e10 R=0.61 pc=0.455    │
-  │    eaq+H3O+→ H      k=2.11e10 R=0.50 pc=0.500*   │
-  │    H+H     → H₂     k=1.2e10  R=0.34 pc=0.216    │
-  │                                                   │
-  │    * R/pc tuned for grid scheme; IRT needed for   │
-  │      accurate spur kinetics of this reaction      │
+  │  At each checkpoint (7 log-spaced, 0.1 ps → 1 μs):│
+  │    snapshot alive[] + products → G(t)             │
   └───────────────────────────────────────────────────┘
+
+  9-reaction table (Karamitros 2011, G4EmDNAChemistry_option1):
+  ┌───┬──────────────────┬──────────┬──────┬──────────────────┐
+  │ # │ reaction         │ k (M⁻¹s⁻¹)│ type │ products         │
+  ├───┼──────────────────┼──────────┼──────┼──────────────────┤
+  │ 0 │ OH + OH          │ 0.55e10  │ PDC  │ H₂O₂             │
+  │ 1 │ eaq + OH         │ 2.95e10  │ PDC  │ OH⁻              │
+  │ 2 │ OH + H           │ 1.55e10  │ PDC  │ H₂O              │
+  │ 3 │ eaq + eaq        │ 0.636e10 │ TDC  │ 2 OH⁻ + H₂       │
+  │ 4 │ eaq + H          │ 2.50e10  │ TDC  │ OH⁻ (+ H₂)       │
+  │ 5 │ eaq + H3O+       │ 2.11e10  │ PDC  │ H                │
+  │ 6 │ H + H            │ 0.503e10 │ TDC  │ H₂               │
+  │ 7 │ eaq + H₂O₂       │ 1.10e10  │ PDC  │ OH⁻ + OH         │
+  │ 8 │ H3O+ + OH⁻       │ 1.13e11  │ TDC  │ H₂O              │
+  └───┴──────────────────┴──────────┴──────┴──────────────────┘
+  TDC = totally diffusion-controlled (contact reaction at σ).
+  PDC = partially diffusion-controlled (effective radius; charged pairs
+        use Onsager-screened Coulomb radius rc = 0.711·q₁q₂ nm @ 293 K).
 ```
 
-## JS Post-Processing (CPU)
+### Alt backend — GPU grid hash (`src/shaders/chemistry.wgsl`)
+
+Spatial hash + Brownian diffusion on GPU. 7-reaction subset (H₂O₂ and OH⁻
+not tracked as products). Much faster but undercounts long-time encounters
+because hash cell size (1.5 nm × 3-neighbor) is smaller than σ_diff at
+the 30 ns timestep. Kept for CSDA-only runs where chemistry can be skipped
+for throughput. Not the validation path.
+
+## JS post-processing (CPU)
 
 ```
   After GPU phases complete:
-    1. Readback dose grid → sum for E_cons, render XY/YZ projections
+    1. Readback dose grid → sum for E_cons, render XY/YZ projections (10 keV only)
     2. Readback results[] → per-primary CSDA, ions, stopping power
     3. Readback rad_buf[] → direct SSB scoring (ionization site clustering)
-    4. Readback chem_pos/alive @ 1μs → indirect SSB (diffused OH near DNA)
+    4. IRT worker output → indirect SSB (diffused OH near DNA at 1 μs)
     5. Cluster SSB → DSB (greedy ±10 bp)
     6. Compare CSDA vs ESTAR reference at 8 energies
     7. Report G(t) timeline vs Karamitros 2011
 ```
 
-## Buffer Map & Data Flow
+## Buffer map & data flow
 
 ```
                      ┌──────────────────────┐
-                     │   GPU MEMORY ~850 MB │
+                     │  GPU MEMORY ~850 MB  │
                      └──────────────────────┘
 
-  Phase A/B shared               Phase C chemistry
-  ────────────────               ──────────────────
+  Phase A/B shared               Phase C (GPU alt path)
+  ────────────────               ──────────────────────
   rad_buf    256 MB ─────────▶  chem_pos    128 MB
   sec_buf    240 MB              chem_rng    128 MB
   dose         2 MB              chem_alive   32 MB
@@ -201,10 +244,7 @@ Instead: 2000 dispatches, each advancing all alive secondaries by 1 step.
     Phase A writes → counters[7] (rad_n for Phase C input count)
     Phase B reads  → sec_buf     (one step per dispatch)
     Phase B writes → rad_buf, dose, counters (shared with A)
-    Phase C reads  → rad_buf via sample_init → chem_pos
-    Phase C reads  → chem_pos via build_hash → cell_head + next_idx
-    Phase C writes → chem_alive (react kills pairs)
-    Phase C reads  → chem_stats (count_alive at checkpoints)
+    rad_buf readback → IRT worker (default) or GPU grid-hash (alt)
 
   Cross sections (WGSL const arrays, compiled into shader):
     fetch('/cross_sections.wgsl') → prepended to SHADER + SEC_SHADER
@@ -213,39 +253,55 @@ Instead: 2000 dispatches, each advancing all alive secondaries by 1 step.
     Elastic:    XAE/XAC 25×25 (Champion angular CDF)
     Vibrational: XVE/XVS/XVMF (Sanche 38 pts × 9 modes)
     Shell/Exc:  XSF/XEF × 5 × 100 pts (per-shell/level fractions)
+
+  Buffer sizing is in src/gpu/buffers.ts. initGPU() requests the adapter's
+  maxBufferSize / maxStorageBufferBindingSize explicitly — the WebGPU
+  default cap of 128 MiB is too small for rad_buf (256 MB) and silently
+  produces empty dispatches.
 ```
 
-## Geant4 → WGSL Model Mapping
+## Geant4 → WGSL / TS model mapping
 
-| Geant4 C++ | Data file | WGSL function | Key difference |
-|-------------|-----------|---------------|----------------|
+| Geant4 C++ | Data file | WGSL / TS | Key difference |
+|-------------|-----------|-----------|----------------|
 | G4DNABornIonisationModel1 | sigma_ionisation_e_born | `xs_all().x` + `sample_W_sec()` | Paired CDF binary search vs Geant4's std::map |
-| G4DNABornAngle | (analytical) | Inline in ionization block | 3 regimes: <50eV iso, 50-200 mixed, >200 kinematic |
-| G4DNABornExcitationModel1 | sigma_excitation_e_born | `xs_all().y` + `xs_exc_fracs()` | Data-driven level fractions, not hardcoded |
-| G4ChemDissociationChannels | (code) | Inline branching | Autoionization for levels 1-4 (produces eaq) |
+| G4DNABornAngle | (analytical) | Inline in ionization block | 3 regimes: <50 eV iso, 50–200 mixed, >200 kinematic |
+| G4DNAEmfietzoglouExcitationModel | sigma_excitation_e_emfietzoglou | `xs_all().y` + `xs_exc_fracs()` | Data-driven level fractions, not hardcoded |
+| G4ChemDissociationChannels | (code) | Inline branching in primary.wgsl | Autoionization for levels 1–4 (produces eaq) |
 | G4DNAChampionElasticModel | sigma_elastic_e_champion | `xs_all().z` + `xs_el_cos()` | Scale: 1e-16 cm² (not Emfietzoglou's 1e-22/3.343 m²) |
 | G4DNASancheExcitationModel | sigma_excitationvib_e_sanche | `xs_vib_total()` + `sample_vib_mode()` | 2× liquid phase factor applied |
-| G4DNAWaterDissociationDisplacer | (code) | `init_thermal()` kernel | Gaussian σ per species from Geant4 RMS values |
-| G4EmDNAChemistry | (code) | `react()` kernel | Grid hash pair discovery vs Geant4's IRT |
+| G4DNAWaterDissociationDisplacer | (code) | `init_thermal()` + worker prechem | Mother displacement + species-specific Gaussian σ |
+| G4EmDNAChemistry_option1 | (code) | `public/irt-worker.js` RXN_TABLE | IRT off-main-thread — matches Karamitros 2011 |
 
 ## Performance
 
-```
-                   Geant4 (CPU)            WebGPU (GPU)
-                   ─────────────           ─────────────
- Runtime           Single-thread C++       Parallel WGSL compute
- Parallelism       1 particle at a time    4096 pri + 900k sec + 6.5M radicals
- 4096 × 10 keV     ~4 min                  ~8s physics + ~15s chemistry
- Speedup                                   ~10-20×
+Measured on Apple M2 Max, Chrome 132, 4096 primaries @ 10 keV.
 
- Physics match:
-   Ionization/nm   0.0713                  0.0737 (within 4%)
-   Energy cons.    100.0%                  99.7%
-   MFP                                     within 2-14% at all energies
-   Mean W_transfer 57.14 eV                57.15 eV (1.000×)
-
- Known limitation:
-   G-values at 1μs limited by grid-based chemistry (not IRT).
-   Grid hash misses long-range diffusive encounters → G(H₂O₂) and G(H₂) low.
-   eaq+H3O+ spur kinetics need IRT for accurate G(eaq)/G(H) balance.
 ```
+                   Geant4 (CPU)              WebGPU (GPU + Worker)
+                   ─────────────             ──────────────────────
+ Runtime           Single-thread C++         Parallel WGSL compute + CPU IRT
+ Parallelism       1 particle at a time      4096 pri + ~900k sec + ~5M radicals
+ Full 8-energy     minutes per energy        ~8 s physics total
+ Chemistry @10keV  hours                     ~30–60 s in IRT worker
+
+ Physics match (vs Geant4 11.4.1 DNA_Opt2 ntuple, same 4096 × 10 keV):
+   CSDA range       2756.5 nm                2714.4 nm      (0.985×)
+   Ions per pri     509.1                    ≈509            (1.00×)
+   Energy cons.     100.0%                   100.0%
+   Mean W_transfer  57.14 eV                 57.15 eV        (1.000×)
+   MFP                                       within 2–14% at all 8 energies
+```
+
+## Known gaps
+
+- GPU-resident chemistry path (`chemBackend: 'gpu'`) undercounts long-time
+  reactions vs IRT because the spatial hash search radius is narrower than
+  the diffusion σ at 30 ns timesteps. The IRT worker is the default for
+  this reason.
+- `data/g4emlow/` is not committed (245 MB) — download from
+  https://geant4-data.web.cern.ch/datasets/ to rebuild `public/cross_sections.wgsl`
+  via `npm run convert`.
+- G(OH) and G(eaq) ratios to Karamitros 2011 are inherently below unity at
+  10 keV because Karamitros's reference is for ~1 MeV low-LET radiation,
+  where track-core radical recombination is lower.
