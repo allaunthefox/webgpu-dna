@@ -71,6 +71,31 @@
   .card ul{margin-top:10px;padding-left:18px;color:var(--tx2);font-size:12px;line-height:1.7}
   .card ul li::marker{color:var(--ac)}
 
+  /* Comparison table */
+  .compare{margin-top:32px;border:1px solid var(--bd);border-radius:8px;overflow:hidden;background:var(--sf)}
+  .compare table{width:100%;border-collapse:collapse;font-size:13px}
+  .compare th,.compare td{padding:14px 18px;text-align:left;vertical-align:top;border-bottom:1px solid var(--bd)}
+  .compare thead th{background:#0e0e15;font-family:var(--mn);font-size:10px;color:var(--dm);text-transform:uppercase;letter-spacing:0.05em;font-weight:600}
+  .compare thead th:first-child{color:var(--dm)}
+  .compare thead th.old{color:#a88}
+  .compare thead th.new{color:var(--ac)}
+  .compare tbody tr:last-child td{border-bottom:none}
+  .compare tbody tr:hover td{background:rgba(0,212,170,0.03)}
+  .compare td.aspect{font-family:var(--mn);font-size:11px;color:var(--dm);font-weight:600;letter-spacing:0.03em;width:22%;text-transform:uppercase}
+  .compare td.old{color:var(--tx2);width:39%}
+  .compare td.new{color:var(--tx);width:39%}
+  .compare td.new strong{color:var(--ac);font-weight:600}
+  .compare td .hint{font-size:11px;color:var(--dm);margin-top:4px}
+  @media (max-width:720px){
+    .compare thead{display:none}
+    .compare tbody tr{display:block;border-bottom:1px solid var(--bd);padding:14px 0}
+    .compare tbody tr:last-child{border-bottom:none}
+    .compare td{display:block;border-bottom:none;padding:4px 18px;width:auto}
+    .compare td.aspect{padding-top:6px;padding-bottom:10px}
+    .compare td.old::before{content:'Traditional · ';color:var(--dm);font-family:var(--mn);font-size:10px;text-transform:uppercase;letter-spacing:0.05em}
+    .compare td.new::before{content:'This project · ';color:var(--ac);font-family:var(--mn);font-size:10px;text-transform:uppercase;letter-spacing:0.05em}
+  }
+
   /* Harness section */
   #harness{border-top:1px solid var(--bd);margin-top:60px;padding-top:60px}
   .harness-head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:24px}
@@ -127,6 +152,7 @@
     <div class="brand">webgpu<span>·</span>dna</div>
     <div class="links">
       <a href="#what">What</a>
+      <a href="#compare">Compare</a>
       <a href="#features">Physics</a>
       <a href="#harness">Run</a>
       <a href="https://github.com/abgnydn/webgpu-dna" target="_blank" rel="noopener">GitHub ↗</a>
@@ -175,6 +201,69 @@
       <div class="sub">Cross-sections, CDF, reactions</div>
     </div>
   </div>
+</section>
+
+<section id="compare">
+  <h2>What changes when it runs in a browser</h2>
+  <p class="sublead">Same physics, radically different access. The table below is the before / after — traditional Geant4-DNA the way medical physicists and radiobiology labs have run it for two decades, vs. this WebGPU port.</p>
+
+  <div class="compare">
+    <table>
+      <thead>
+        <tr>
+          <th>&nbsp;</th>
+          <th class="old">Traditional Geant4-DNA</th>
+          <th class="new">WebGPU-DNA (this project)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="aspect">Install</td>
+          <td class="old">50+ GB toolkit · 2–4 hr C++ compile · CMake, ROOT, Xerces, GDML dependencies · data files from CERN</td>
+          <td class="new"><strong>None.</strong> Open a URL. 94 KB of JavaScript, 1.3 MB of cross-section data, served over CDN.</td>
+        </tr>
+        <tr>
+          <td class="aspect">Hardware</td>
+          <td class="old">Linux workstation or HPC cluster · typically 16–64 CPU cores to be usable</td>
+          <td class="new">Any laptop or phone with a WebGPU-capable browser. Tested down to Apple M1 and Intel integrated graphics.</td>
+        </tr>
+        <tr>
+          <td class="aspect">Time to first result</td>
+          <td class="old">Hours of setup, then minutes to hours per 10 keV run depending on primaries &amp; core count</td>
+          <td class="new"><strong>~10 seconds</strong> from page load to full 8-energy validation sweep at 4096 primaries.</td>
+        </tr>
+        <tr>
+          <td class="aspect">Physics fidelity @ 10 keV</td>
+          <td class="old">Reference (by construction)</td>
+          <td class="new">CSDA <strong>0.985×</strong> · energy conservation <strong>100.0%</strong> · ions/primary exact match · chemistry within textbook tolerances<div class="hint">Verified side-by-side against a Geant4 11.4 dnaphysics ntuple</div></td>
+        </tr>
+        <tr>
+          <td class="aspect">Reproducibility</td>
+          <td class="old">Depends on your Geant4 build, compiler, OS, library versions, random seed — "works on my cluster" is a real problem</td>
+          <td class="new">Same URL, same bundle hash, same WGSL shader — <strong>same numbers everywhere</strong></td>
+        </tr>
+        <tr>
+          <td class="aspect">Access cost</td>
+          <td class="old">Institutional cluster time, or a workstation admin who lets you install Geant4</td>
+          <td class="new"><strong>$0.</strong> No account, no sign-in, no API key, no rate limit.</td>
+        </tr>
+        <tr>
+          <td class="aspect">Who can use it</td>
+          <td class="old">Graduate students and staff in labs with the infrastructure — effectively gate-kept behind institutional access</td>
+          <td class="new">Anyone — med students, high-schoolers, independent researchers, developers curious about WebGPU.</td>
+        </tr>
+        <tr>
+          <td class="aspect">Intended scope</td>
+          <td class="old">Production radiation-therapy planning, space-mission dosimetry, published radiobiology research</td>
+          <td class="new">Education, rapid prototyping, teaching, method exploration. <em>Not</em> a replacement for clinical Geant4-DNA.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p class="sublead" style="margin-top:20px;font-size:13px">
+    Bottom line: a faithful-enough version of the tool that used to require a PhD and a compute cluster, now one click away from anyone.
+  </p>
 </section>
 
 <section id="features">
