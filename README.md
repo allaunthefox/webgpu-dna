@@ -31,7 +31,7 @@ npm run lint
 npm run build          # dist/
 ```
 
-Requires a WebGPU-capable browser. WebGPU ships on-by-default in Chrome / Edge 113+ desktop (Chrome 121+ Android), Safari 26+ (macOS Tahoe, iOS / iPadOS 26, Sep 2025), and Firefox 141+ Windows / 145+ macOS. Linux Firefox and Android Firefox still need `dom.webgpu.enabled` in `about:config`.
+Requires a WebGPU-capable browser. Shipped on-by-default in Chrome / Edge 113+ desktop, Chrome 121+ Android (Android 12+ on Qualcomm / ARM GPUs), Safari 26+ (macOS Tahoe, iOS / iPadOS / visionOS 26, Sep 2025), Firefox 141+ on Windows, and Firefox 145+ on macOS 26 Tahoe (Apple Silicon only). Firefox Linux, Firefox Android, and older Firefox still need `dom.webgpu.enabled` in `about:config`. Full matrix: [caniuse.com/webgpu](https://caniuse.com/webgpu).
 
 ## Project layout
 
