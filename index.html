@@ -51,10 +51,13 @@
   /* Stat strip */
   .stats{max-width:1100px;margin:0 auto;padding:0 24px 60px}
   .stats .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1px;background:var(--bd);border:1px solid var(--bd);border-radius:8px;overflow:hidden}
-  .stat{background:var(--sf);padding:20px 22px}
+  .stat{background:var(--sf);padding:22px 22px 20px;position:relative;transition:background 0.2s;overflow:hidden}
+  .stat::before{content:'';position:absolute;top:0;left:35%;right:35%;height:2px;background:linear-gradient(90deg,transparent,var(--ac),transparent);opacity:0;transition:opacity 0.25s,left 0.3s,right 0.3s}
+  .stat:hover{background:var(--s2)}
+  .stat:hover::before{opacity:1;left:0;right:0}
   .stat .val{font-family:var(--mn);font-size:22px;font-weight:600;color:var(--ac);letter-spacing:-0.02em;line-height:1.1}
   .stat .lbl{font-family:var(--mn);font-size:10px;color:var(--dm);margin-top:6px;letter-spacing:0.05em;text-transform:uppercase}
-  .stat .sub{font-size:11px;color:var(--tx2);margin-top:8px}
+  .stat .sub{font-size:11px;color:var(--tx2);margin-top:8px;line-height:1.5}
 
   /* Section */
   section{max-width:1100px;margin:0 auto;padding:40px 24px}
@@ -99,10 +102,19 @@
   /* Harness section */
   #harness{border-top:1px solid var(--bd);margin-top:60px;padding-top:60px}
   .harness-head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:24px}
-  .harness-head .status{font-family:var(--mn);font-size:11px;color:var(--dm)}
-  .harness-head .status .dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--dm);margin-right:6px;vertical-align:middle}
+  .harness-head .status{font-family:var(--mn);font-size:11px;color:var(--dm);padding:8px 14px;border-radius:20px;background:var(--sf);border:1px solid var(--bd);display:inline-flex;align-items:center;gap:8px;min-width:148px;justify-content:center;transition:border-color 0.2s,color 0.2s;white-space:nowrap}
+  .harness-head .status .dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--dm);vertical-align:middle;transition:background 0.2s,box-shadow 0.2s}
+  .harness-head .status.ready{border-color:var(--ok);color:var(--ok)}
   .harness-head .status.ready .dot{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+  .harness-head .status.err{border-color:var(--bad);color:var(--bad)}
   .harness-head .status.err .dot{background:var(--bad)}
+  .harness-head .status.running{border-color:var(--ac);color:var(--ac)}
+  .harness-head .status.running .dot{background:var(--ac);animation:pulse-ring 1.6s ease-out infinite}
+  @keyframes pulse-ring{
+    0%{box-shadow:0 0 0 0 rgba(0,212,170,0.6)}
+    70%{box-shadow:0 0 0 7px rgba(0,212,170,0)}
+    100%{box-shadow:0 0 0 0 rgba(0,212,170,0)}
+  }
 
   .nw{display:none;padding:20px;background:rgba(255,68,68,0.1);border:1px solid var(--bad);border-radius:6px;color:var(--bad);text-align:center;font-family:var(--mn);font-size:12px}
   .nw.show{display:block}
@@ -126,8 +138,22 @@
   .ok{color:var(--ok)}.bad{color:var(--bad)}.meh{color:var(--warn)}
 
   .dose-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(256px,1fr));gap:16px;margin-top:24px}
-  .dose-row .dose-card{background:var(--sf);border:1px solid var(--bd);border-radius:8px;padding:16px;text-align:center}
-  .dose-row canvas{border:1px solid var(--bd);background:#000;image-rendering:pixelated;max-width:100%}
+  .dose-row .dose-card{background:var(--sf);border:1px solid var(--bd);border-radius:8px;padding:16px;text-align:center;transition:border-color 0.2s}
+  .dose-row .dose-card:hover{border-color:var(--bd2)}
+  .dose-row .dose-card.painted:hover{border-color:var(--ac)}
+  .dose-row .canvas-wrap{position:relative;display:inline-block;max-width:100%;line-height:0}
+  .dose-row canvas{border:1px solid var(--bd);background:#000;image-rendering:pixelated;max-width:100%;display:block}
+  .dose-row .placeholder{
+    position:absolute;inset:1px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;padding:16px;line-height:1.55;
+    font-family:var(--mn);font-size:10px;color:var(--dm);letter-spacing:0.02em;
+    background:
+      linear-gradient(135deg,rgba(0,212,170,0.05) 25%,transparent 25%,transparent 50%,rgba(0,212,170,0.05) 50%,rgba(0,212,170,0.05) 75%,transparent 75%) 0 0/12px 12px,
+      #000;
+    pointer-events:none;transition:opacity 0.4s;
+  }
+  .dose-row .placeholder strong{color:var(--tx2);font-weight:500;font-size:11px;display:block;margin-bottom:6px;letter-spacing:0.04em;text-transform:uppercase}
+  .dose-row .dose-card.painted .placeholder{opacity:0}
   .dose-row .dose-label{font-family:var(--mn);font-size:10px;color:var(--dm);margin-top:10px;line-height:1.5}
 
   .log-wrap{margin-top:24px;background:var(--sf);border:1px solid var(--bd);border-radius:8px;overflow:hidden}
@@ -138,11 +164,114 @@
   .note{font-size:12px;color:var(--dm);margin-top:20px;line-height:1.6;padding:12px;background:var(--sf);border-radius:6px;border-left:3px solid var(--bd)}
 
   /* Footer */
-  footer{border-top:1px solid var(--bd);margin-top:80px;padding:32px 24px;color:var(--dm);font-size:12px}
+  footer{border-top:1px solid var(--bd);margin-top:80px;padding:36px 24px;color:var(--dm);font-size:12px;background:linear-gradient(180deg,transparent 0%,rgba(0,212,170,0.02) 100%);position:relative}
+  footer::before{content:'';position:absolute;top:-1px;left:50%;width:120px;height:1px;background:linear-gradient(90deg,transparent,var(--ac),transparent);transform:translateX(-50%)}
   footer .inner{max-width:1100px;margin:0 auto;display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;align-items:center}
-  footer .inner a{color:var(--dm)}
+  footer .inner a{color:var(--dm);transition:color 0.15s}
   footer .inner a:hover{color:var(--ac);text-decoration:none}
-  footer .refs{font-family:var(--mn);font-size:10px}
+  footer .refs{font-family:var(--mn);font-size:10px;margin-top:6px}
+
+  /* ═══ Polish layer ════════════════════════════ */
+
+  /* Sticky-nav-safe anchor offsets */
+  section,header,#harness{scroll-margin-top:72px}
+
+  /* Accessible focus rings */
+  *:focus{outline:none}
+  *:focus-visible{outline:2px solid var(--ac);outline-offset:3px;border-radius:3px}
+  .cta .btn:focus-visible,.controls .btn:focus-visible{outline-offset:4px}
+
+  /* Nav: animated underline + spacing */
+  nav .links a::after{content:'';position:absolute;left:0;right:0;bottom:-5px;height:1px;background:var(--ac);transform:scaleX(0);transform-origin:center;transition:transform 0.2s ease-out}
+  nav .links a:hover::after{transform:scaleX(1)}
+  nav .links a{position:relative;padding:2px 0}
+
+  /* Scroll hint under hero CTA */
+  .scroll-hint{
+    margin-top:28px;display:inline-flex;align-items:center;gap:10px;
+    font-family:var(--mn);font-size:10px;color:var(--dm);
+    letter-spacing:0.1em;text-transform:uppercase;
+    opacity:0.7;transition:opacity 0.2s,color 0.2s;
+  }
+  .scroll-hint:hover{opacity:1;color:var(--ac);text-decoration:none}
+  .scroll-hint .chev{display:inline-block;animation:chev-bounce 2s ease-in-out infinite;font-size:14px;line-height:1}
+  @keyframes chev-bounce{0%,100%{transform:translateY(-1px);opacity:0.55}50%{transform:translateY(4px);opacity:1}}
+
+  /* Feature card polish */
+  .card{transition:border-color 0.18s,transform 0.18s,background 0.25s}
+  .card:hover{background:linear-gradient(180deg,var(--sf),var(--s2))}
+  .card:hover .ic{color:var(--ac);text-shadow:0 0 10px rgba(0,212,170,0.35)}
+  .card .ic{transition:color 0.2s,text-shadow 0.2s}
+
+  /* Hero CTA primary: subtle pulse on first load */
+  @keyframes cta-pulse{
+    0%,100%{box-shadow:0 0 0 0 rgba(0,212,170,0)}
+    40%{box-shadow:0 0 0 8px rgba(0,212,170,0.12)}
+    80%{box-shadow:0 0 0 16px rgba(0,212,170,0)}
+  }
+  .cta .btn.primary{animation:cta-pulse 2.4s ease-out 0.8s 1}
+
+  /* Section rhythm */
+  section{padding:56px 24px}
+  section + section:not(#harness){padding-top:40px}
+
+  /* Scrollbars on dark surfaces */
+  .table-wrap,.log{scrollbar-width:thin;scrollbar-color:var(--bd2) transparent}
+  .table-wrap::-webkit-scrollbar{height:8px;width:8px}
+  .log::-webkit-scrollbar{width:6px}
+  .table-wrap::-webkit-scrollbar-thumb,.log::-webkit-scrollbar-thumb{background:var(--bd);border-radius:4px}
+  .table-wrap::-webkit-scrollbar-thumb:hover,.log::-webkit-scrollbar-thumb:hover{background:var(--bd2)}
+  .table-wrap::-webkit-scrollbar-track,.log::-webkit-scrollbar-track{background:transparent}
+
+  /* Controls: polished inputs */
+  .controls input[type=number]{transition:border-color 0.15s,background 0.15s}
+  .controls input[type=number]:hover{border-color:var(--bd2)}
+  .controls label{gap:8px}
+
+  /* Results table: zebra + sticky-header polish */
+  #results tbody tr:nth-child(odd) td{background:rgba(255,255,255,0.015)}
+  #results tbody tr:nth-child(odd) td:first-child{background:linear-gradient(90deg,var(--sf),rgba(255,255,255,0.015))}
+  #results tbody tr:hover td{background:rgba(0,212,170,0.05)!important}
+  #results tbody tr:hover td:first-child{background:linear-gradient(90deg,var(--sf),rgba(0,212,170,0.05))!important}
+
+  /* Log entry fade-in */
+  .log > div{animation:log-in 0.2s ease-out}
+  @keyframes log-in{from{opacity:0;transform:translateX(-4px)}to{opacity:1;transform:translateX(0)}}
+
+  /* Harness header layout polish */
+  .harness-head h2{margin-bottom:8px}
+
+  /* Tag chip: subtle glow */
+  .tag{box-shadow:0 0 0 0 rgba(0,212,170,0);transition:box-shadow 0.3s,transform 0.2s}
+  .tag:hover{box-shadow:0 0 20px rgba(0,212,170,0.2);transform:translateY(-1px)}
+
+  /* Selection color */
+  ::selection{background:rgba(0,212,170,0.25);color:var(--tx)}
+
+  /* Responsive: tighten on narrow screens */
+  @media (max-width:640px){
+    nav .inner{padding:12px 16px;gap:12px}
+    nav .links{gap:14px;font-size:10px}
+    nav .links .hide-sm{display:none}
+    .hero{padding:56px 20px 36px}
+    .stats{padding:0 20px 40px}
+    section{padding:44px 20px}
+    #harness{padding-top:44px;margin-top:40px}
+    footer{padding:28px 20px}
+    footer .inner{font-size:11px}
+    .harness-head{flex-direction:column;align-items:flex-start}
+    .harness-head .status{align-self:flex-start}
+    .controls{padding:12px;gap:10px}
+    .controls label{font-size:9px}
+    .stat{padding:18px 16px}
+    .stat .val{font-size:20px}
+  }
+
+  /* Reduce motion respect */
+  @media (prefers-reduced-motion:reduce){
+    *,*::before,*::after{animation-duration:0.01ms!important;animation-iteration-count:1!important;transition-duration:0.01ms!important;scroll-behavior:auto!important}
+    .scroll-hint .chev{animation:none}
+  }
 </style>
 </head>
 <body>
@@ -155,7 +284,7 @@
       <a href="#compare">Compare</a>
       <a href="#features">Physics</a>
       <a href="#harness">Run</a>
-      <a href="https://github.com/abgnydn/webgpu-dna" target="_blank" rel="noopener">GitHub ↗</a>
+      <a href="https://github.com/abgnydn/webgpu-dna" class="hide-sm" target="_blank" rel="noopener">GitHub ↗</a>
     </div>
   </div>
 </nav>
@@ -176,6 +305,9 @@
   <div class="warn-box">
     <strong>Requires WebGPU.</strong> Shipped on-by-default in Chrome / Edge 113+ desktop, Chrome 121+ Android (Android 12+ on Qualcomm / ARM GPUs), Safari 26+ (macOS Tahoe, iOS / iPadOS / visionOS 26, Sep 2025), Firefox 141+ on Windows, and Firefox 145+ on macOS 26 Tahoe (Apple Silicon only). Firefox Linux, Firefox Android, and older Firefox still need <code>dom.webgpu.enabled</code>. Full matrix: <a href="https://caniuse.com/webgpu" target="_blank" rel="noopener">caniuse.com/webgpu</a>. A discrete or Apple-silicon GPU is recommended at N ≥ 4096 primaries.
   </div>
+  <a href="#compare" class="scroll-hint" aria-label="Scroll to comparison section">
+    See what changes <span class="chev" aria-hidden="true">↓</span>
+  </a>
 </header>
 
 <section class="stats" id="what">
@@ -322,7 +454,7 @@
       <h2>Live validation harness</h2>
       <p class="sublead">Runs the full 8-energy ESTAR sweep. Chemistry + DNA damage scoring fire at 10 keV. 4096 primaries takes about 6–10 seconds on an M-series laptop GPU.</p>
     </div>
-    <div class="status" id="status"><span class="dot"></span><span id="status-text">initializing…</span></div>
+    <div class="status" id="status" role="status" aria-live="polite"><span class="dot" aria-hidden="true"></span><span id="status-text">initializing…</span></div>
   </div>
 
   <div class="nw" id="nw">WebGPU not available in this browser. Try Chrome 113+ or enable <code>dom.webgpu.enabled</code> in Firefox.</div>
@@ -371,19 +503,25 @@
   </div>
 
   <div class="dose-row">
-    <div class="dose-card">
-      <canvas id="dose_xy" width="256" height="256"></canvas>
+    <div class="dose-card" id="dose_card_xy">
+      <div class="canvas-wrap">
+        <canvas id="dose_xy" width="256" height="256" aria-label="Dose projection, XY plane (sum over Z axis)"></canvas>
+        <div class="placeholder"><strong>Awaiting 10 keV pass</strong>Dose projection paints after the<br>full sweep completes</div>
+      </div>
       <div class="dose-label">Dose projection (XY, sum over Z) — 10 keV primaries, log magma</div>
     </div>
-    <div class="dose-card">
-      <canvas id="dose_yz" width="256" height="256"></canvas>
+    <div class="dose-card" id="dose_card_yz">
+      <div class="canvas-wrap">
+        <canvas id="dose_yz" width="256" height="256" aria-label="Dose projection, YZ plane (sum over X axis)"></canvas>
+        <div class="placeholder"><strong>Awaiting 10 keV pass</strong>Dose projection paints after the<br>full sweep completes</div>
+      </div>
       <div class="dose-label">Dose projection (YZ, sum over X) — along primary track direction</div>
     </div>
   </div>
 
   <div class="log-wrap">
     <div class="log-head">runtime log</div>
-    <div class="log" id="log"></div>
+    <div class="log" id="log" role="log" aria-live="polite" aria-label="Validation runtime log"></div>
   </div>
 </section>
 
@@ -404,30 +542,53 @@
 </footer>
 
 <script>
-  // Minimal status indicator — flips to "ready" once main.ts signals it (via
-  // the first successful GPU-device init log line). Safe to be a no-op if
-  // main.ts fails; the nw panel above renders the hard error.
+  // Status indicator + dose-card placeholder orchestration. Listens to the
+  // runtime log for state transitions and reflects them in the header chip
+  // and dose canvas placeholders. Safe to be a no-op if main.ts fails —
+  // the #nw panel renders the hard error on unsupported browsers.
   (function(){
     const el = document.getElementById('status');
     const tx = document.getElementById('status-text');
     const log = document.getElementById('log');
-    if(!log) return;
-    const obs = new MutationObserver(()=>{
+    if(!el || !tx || !log) return;
+    const set = (cls, txt) => {
+      el.classList.remove('ready','err','running');
+      if(cls) el.classList.add(cls);
+      tx.textContent = txt;
+    };
+    const markPainted = () => {
+      document.querySelectorAll('.dose-card').forEach(c => c.classList.add('painted'));
+    };
+    const unmarkPainted = () => {
+      document.querySelectorAll('.dose-card').forEach(c => c.classList.remove('painted'));
+    };
+    const obs = new MutationObserver(() => {
       const txt = log.innerText;
-      if(/WebGPU not available|No adapter/i.test(txt)){
-        el.classList.remove('ready'); el.classList.add('err');
-        tx.textContent = 'WebGPU unavailable';
+      if(/WebGPU not available|No adapter|Failed to init/i.test(txt)){
+        set('err', 'WebGPU unavailable');
         obs.disconnect();
-      } else if(/Shaders compiled|Validation run complete/i.test(txt)){
-        el.classList.add('ready');
-        tx.textContent = /complete/i.test(txt) ? 'run complete' : 'ready';
+        return;
+      }
+      if(/Validation run complete/i.test(txt)){
+        set('ready', 'run complete');
+        markPainted();
+      } else if(/Validation failed|✗ Error|runValidation failed/i.test(txt)){
+        set('err', 'run failed');
       } else if(/Running \d+ primaries/i.test(txt)){
-        el.classList.add('ready');
-        tx.textContent = 'running…';
+        if(!el.classList.contains('running')){
+          unmarkPainted();
+          set('running', 'running…');
+        }
+      } else if(/Shaders compiled/i.test(txt) && !el.classList.contains('running') && !el.classList.contains('ready')){
+        set('ready', 'ready');
       }
     });
-    obs.observe(log, {childList:true, subtree:true, characterData:true});
-    setTimeout(()=>{ if(!el.classList.contains('ready') && !el.classList.contains('err')){ tx.textContent='waiting for WebGPU'; }}, 2000);
+    obs.observe(log, { childList:true, subtree:true, characterData:true });
+    setTimeout(() => {
+      if(!el.classList.contains('ready') && !el.classList.contains('err') && !el.classList.contains('running')){
+        tx.textContent = 'waiting for WebGPU';
+      }
+    }, 2000);
   })();
 </script>
 
