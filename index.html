@@ -60,7 +60,17 @@
       "image": "https://webgpu-dna.vercel.app/og-image.png",
       "author": {
         "@type": "Person",
-        "name": "Ahmet Baris Gunaydin"
+        "name": "Ahmet Baris Gunaydin",
+        "sameAs": [
+          "https://kernelfusion.dev",
+          "https://gpubench.dev",
+          "https://github.com/abgnydn"
+        ]
+      },
+      "isPartOf": {
+        "@type": "CreativeWork",
+        "name": "Kernel-fusion research line",
+        "url": "https://kernelfusion.dev"
       },
       "license": "https://opensource.org/licenses/MIT",
       "codeRepository": "https://github.com/abgnydn/webgpu-dna",
@@ -155,6 +165,27 @@
   .card p{color:var(--tx2);font-size:13px;line-height:1.6}
   .card ul{margin-top:10px;padding-left:18px;color:var(--tx2);font-size:12px;line-height:1.7}
   .card ul li::marker{color:var(--ac)}
+
+  /* Companion projects */
+  .related-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;margin-top:24px}
+  @media (max-width:720px){.related-grid{grid-template-columns:1fr}}
+  .related-card{
+    display:block;padding:28px;border:1px solid var(--bd);border-radius:10px;background:var(--sf);
+    text-decoration:none;color:inherit;position:relative;overflow:hidden;
+    transition:border-color 0.2s,transform 0.2s,background 0.2s;
+  }
+  .related-card::before{
+    content:'';position:absolute;top:0;left:0;right:0;height:2px;
+    background:linear-gradient(90deg,transparent,var(--ac),transparent);
+    opacity:0;transition:opacity 0.25s;
+  }
+  .related-card:hover{border-color:var(--ac);transform:translateY(-2px);background:#14141e;text-decoration:none}
+  .related-card:hover::before{opacity:1}
+  .related-card .related-tag{font-family:var(--mn);font-size:10px;color:var(--dm);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px}
+  .related-card h3{font-family:var(--mn);font-size:22px;font-weight:600;color:var(--tx);margin:0 0 12px;letter-spacing:-0.01em}
+  .related-card:hover h3{color:var(--ac)}
+  .related-card p{color:var(--tx2);font-size:13px;line-height:1.6;margin:0 0 14px}
+  .related-card .related-cta{font-family:var(--mn);font-size:11px;color:var(--ac);letter-spacing:0.04em}
 
   /* Comparison table */
   .compare{margin-top:32px;border:1px solid var(--bd);border-radius:8px;overflow:hidden;background:var(--sf)}
@@ -374,6 +405,7 @@
       <a href="#what">What</a>
       <a href="#compare">Compare</a>
       <a href="#features">Physics</a>
+      <a href="#related" class="hide-sm">Related</a>
       <a href="#harness">Run</a>
       <a href="https://github.com/abgnydn/webgpu-dna" class="hide-sm" target="_blank" rel="noopener">GitHub ↗</a>
     </div>
@@ -540,8 +572,31 @@
     The core trick: invert Geant4's sequential tracking loop. Phase A dispatches <strong>one GPU thread per primary</strong> and runs the full particle history in a WGSL loop — no per-step dispatch overhead. Phase B wavefront-steps secondaries. Phase C is 133 chemistry ticks × 4 dispatches (diffuse → hash → react). Everything writes to a shared <code>128³</code> atomic voxel grid and a <code>16M × 16 B</code> radical buffer.
   </p>
   <p class="sublead">
+    That &ldquo;one dispatch, full history&rdquo; shape is the same <a href="https://kernelfusion.dev" target="_blank" rel="noopener">single-kernel fusion</a> pattern that has given 3–4 orders of magnitude of speedup on other GPU workloads dominated by launch overhead — here it is what makes the entire electron history cheap enough to run live in a browser tab.
+  </p>
+  <p class="sublead">
     Full pipeline diagram, buffer sizing, and WGSL constraints are in <a href="https://github.com/abgnydn/webgpu-dna/blob/main/ARCHITECTURE.md" target="_blank" rel="noopener">ARCHITECTURE.md</a>. Physics provenance and known gaps are in <a href="https://github.com/abgnydn/webgpu-dna/blob/main/CLAUDE.md" target="_blank" rel="noopener">CLAUDE.md</a>.
   </p>
+</section>
+
+<section id="related">
+  <h2>Companion projects</h2>
+  <p class="sublead">This simulation is one application of a broader line of work on GPU-resident compute in the browser. The research hub and the benchmarking infrastructure it grew out of:</p>
+
+  <div class="related-grid">
+    <a class="related-card" href="https://kernelfusion.dev" target="_blank" rel="noopener">
+      <div class="related-tag">Research</div>
+      <h3>kernelfusion.dev</h3>
+      <p>Single-kernel fusion for GPU workloads — evolutionary search, Transformer decoding, and browser-to-browser distributed evolution. Up to 4,081× speedups on Apple Silicon by collapsing per-dispatch overhead. Open SDK (<code>@wgpu-fusion/core</code>), open benchmarks, reproducible results.</p>
+      <div class="related-cta">Read the papers →</div>
+    </a>
+    <a class="related-card" href="https://gpubench.dev" target="_blank" rel="noopener">
+      <div class="related-tag">Benchmarks</div>
+      <h3>gpubench.dev</h3>
+      <p>&ldquo;How fast is your GPU in the browser?&rdquo; Real WebGPU compute tests — Rastrigin, N-body, Monte Carlo Pi, RL environments. 487 real devices across 8 vendors, full device transparency, no selective reporting. Run it before you trust the numbers on this page.</p>
+      <div class="related-cta">Benchmark your GPU →</div>
+    </a>
+  </div>
 </section>
 
 <section id="harness">
@@ -628,8 +683,11 @@
       <div class="refs" style="margin-top:6px">
         Built on Geant4-DNA physics · Karamitros 2011 IRT · ESTAR (NIST) · G4EMLOW 8.8
       </div>
+      <div class="refs" style="margin-top:10px">
+        Related: <a href="https://kernelfusion.dev" target="_blank" rel="noopener">kernelfusion.dev</a> · <a href="https://gpubench.dev" target="_blank" rel="noopener">gpubench.dev</a>
+      </div>
     </div>
-    <div style="display:flex;gap:18px;font-family:var(--mn);font-size:11px">
+    <div style="display:flex;gap:18px;font-family:var(--mn);font-size:11px;flex-wrap:wrap">
       <a href="https://github.com/abgnydn/webgpu-dna" target="_blank" rel="noopener">GitHub</a>
       <a href="https://github.com/abgnydn/webgpu-dna/blob/main/ARCHITECTURE.md" target="_blank" rel="noopener">Architecture</a>
       <a href="https://geant4-dna.in2p3.fr/" target="_blank" rel="noopener">Geant4-DNA</a>
