@@ -1,0 +1,32 @@
+{
+  "name": "WebGPU Geant4-DNA",
+  "short_name": "webgpu·dna",
+  "description": "In-browser Monte Carlo electron track structure, IRT radiolysis chemistry, and DNA damage scoring, powered by WebGPU.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0a0a0f",
+  "theme_color": "#00d4aa",
+  "lang": "en",
+  "categories": ["science", "education", "utilities"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "type": "image/png",
+      "sizes": "180x180",
+      "purpose": "any"
+    }
+  ]
+}

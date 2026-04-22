@@ -3,10 +3,92 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#00d4aa">
+
 <title>WebGPU Geant4-DNA — In-Browser Monte Carlo Track Structure</title>
-<meta name="description" content="A WebGPU port of Geant4-DNA. Monte Carlo electron track structure, IRT radiolysis chemistry, and SSB/DSB scoring on a B-DNA fiber grid — running entirely in your browser.">
-<meta property="og:title" content="WebGPU Geant4-DNA">
-<meta property="og:description" content="In-browser Monte Carlo electron track structure, IRT chemistry, and DNA damage scoring.">
+<meta name="description" content="A WebGPU port of Geant4-DNA. Monte Carlo electron track structure, Karamitros 2011 IRT radiolysis chemistry, and SSB/DSB scoring on a B-DNA fiber grid — running entirely in your browser.">
+<meta name="author" content="Ahmet Baris Gunaydin">
+<meta name="keywords" content="WebGPU, Geant4-DNA, Monte Carlo, track structure, radiobiology, radiolysis, IRT chemistry, DNA damage, SSB, DSB, WGSL, compute shader, in-browser simulation">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<link rel="canonical" href="https://webgpu-dna.vercel.app/">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="WebGPU Geant4-DNA">
+<meta property="og:title" content="WebGPU Geant4-DNA — In-Browser Monte Carlo Track Structure">
+<meta property="og:description" content="Geant4-DNA, in the browser. One fused WGSL dispatch · Karamitros 2011 IRT radiolysis · event-level SSB/DSB scoring. CSDA 0.985× reference, 46/46 tests pass.">
+<meta property="og:url" content="https://webgpu-dna.vercel.app/">
+<meta property="og:image" content="https://webgpu-dna.vercel.app/og-image.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="WebGPU Geant4-DNA — Monte Carlo track structure and DNA damage simulation running in the browser.">
+<meta property="og:locale" content="en_US">
+
+<!-- Twitter / X -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="WebGPU Geant4-DNA — In-Browser Monte Carlo Track Structure">
+<meta name="twitter:description" content="Geant4-DNA, in the browser. WGSL compute shaders, Karamitros 2011 IRT, SSB/DSB scoring. CSDA 0.985× reference.">
+<meta name="twitter:image" content="https://webgpu-dna.vercel.app/og-image.png">
+<meta name="twitter:image:alt" content="WebGPU Geant4-DNA — Monte Carlo track structure and DNA damage simulation running in the browser.">
+
+<!-- Icons -->
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+
+<!-- Font preconnect for faster LCP -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+<!-- Structured data — SoftwareApplication / ScholarlyArticle -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://webgpu-dna.vercel.app/#app",
+      "name": "WebGPU Geant4-DNA",
+      "applicationCategory": "ScienceApplication",
+      "applicationSubCategory": "Monte Carlo Simulation",
+      "operatingSystem": "Any OS with a WebGPU-capable browser (Chrome 113+, Edge 113+, Safari 26+, Firefox 141+, Chrome Android 121+)",
+      "description": "A WebGPU port of Geant4-DNA: Monte Carlo electron track structure, Karamitros 2011 IRT radiolysis chemistry, and event-level SSB/DSB scoring on a B-DNA fiber grid, running entirely in the browser.",
+      "url": "https://webgpu-dna.vercel.app/",
+      "image": "https://webgpu-dna.vercel.app/og-image.png",
+      "author": {
+        "@type": "Person",
+        "name": "Ahmet Baris Gunaydin"
+      },
+      "license": "https://opensource.org/licenses/MIT",
+      "codeRepository": "https://github.com/abgnydn/webgpu-dna",
+      "programmingLanguage": ["TypeScript", "WGSL", "Python"],
+      "isAccessibleForFree": true,
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "softwareRequirements": "WebGPU-capable browser",
+      "keywords": "WebGPU, Geant4-DNA, Monte Carlo, track structure, radiobiology, IRT, DNA damage, SSB, DSB, radiolysis"
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://webgpu-dna.vercel.app/#website",
+      "url": "https://webgpu-dna.vercel.app/",
+      "name": "WebGPU Geant4-DNA",
+      "inLanguage": "en-US",
+      "publisher": {
+        "@type": "Person",
+        "name": "Ahmet Baris Gunaydin"
+      }
+    }
+  ]
+}
+</script>
+
 <style>
   @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap');
   :root{
