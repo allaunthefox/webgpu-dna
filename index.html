@@ -64,7 +64,9 @@
         "sameAs": [
           "https://kernelfusion.dev",
           "https://gpubench.dev",
-          "https://github.com/abgnydn"
+          "https://zerotvm.com",
+          "https://github.com/abgnydn",
+          "https://www.linkedin.com/in/abgnydn/"
         ]
       },
       "isPartOf": {
@@ -98,6 +100,10 @@
   ]
 }
 </script>
+
+<!-- Vercel Analytics / Speed Insights (loads only on production deployments) -->
+<script defer src="/_vercel/insights/script.js"></script>
+<script defer src="/_vercel/speed-insights/script.js"></script>
 
 <style>
   @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap');
@@ -167,7 +173,8 @@
   .card ul li::marker{color:var(--ac)}
 
   /* Companion projects */
-  .related-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;margin-top:24px}
+  .related-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:24px}
+  @media (max-width:960px){.related-grid{grid-template-columns:repeat(2,1fr)}}
   @media (max-width:720px){.related-grid{grid-template-columns:1fr}}
   .related-card{
     display:block;padding:28px;border:1px solid var(--bd);border-radius:10px;background:var(--sf);
@@ -596,6 +603,12 @@
       <p>&ldquo;How fast is your GPU in the browser?&rdquo; Real WebGPU compute tests — Rastrigin, N-body, Monte Carlo Pi, RL environments. 487 real devices across 8 vendors, full device transparency, no selective reporting. Run it before you trust the numbers on this page.</p>
       <div class="related-cta">Benchmark your GPU →</div>
     </a>
+    <a class="related-card" href="https://zerotvm.com" target="_blank" rel="noopener">
+      <div class="related-tag">LLM inference</div>
+      <h3>zerotvm.com</h3>
+      <p>Phi-3 (3.6B parameters) running entirely in the browser on 10 hand-written WGSL shaders, replacing the 85 auto-generated ones that TVM/WebLLM needs. 792 lines of GPU code, 14 KB JS bundle, ~same speed as the compiler pipeline.</p>
+      <div class="related-cta">Run it live →</div>
+    </a>
   </div>
 </section>
 
@@ -684,7 +697,7 @@
         Built on Geant4-DNA physics · Karamitros 2011 IRT · ESTAR (NIST) · G4EMLOW 8.8
       </div>
       <div class="refs" style="margin-top:10px">
-        Related: <a href="https://kernelfusion.dev" target="_blank" rel="noopener">kernelfusion.dev</a> · <a href="https://gpubench.dev" target="_blank" rel="noopener">gpubench.dev</a>
+        Related: <a href="https://kernelfusion.dev" target="_blank" rel="noopener">kernelfusion.dev</a> · <a href="https://gpubench.dev" target="_blank" rel="noopener">gpubench.dev</a> · <a href="https://zerotvm.com" target="_blank" rel="noopener">zerotvm.com</a>
       </div>
     </div>
     <div style="display:flex;gap:18px;font-family:var(--mn);font-size:11px;flex-wrap:wrap">
