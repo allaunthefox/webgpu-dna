@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/ tests/",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint src/ tests/",
+    "check": "npm run typecheck && npm run lint && npm run test",
     "convert": "python3 tools/convert_g4data.py"
   },
   "license": "MIT",

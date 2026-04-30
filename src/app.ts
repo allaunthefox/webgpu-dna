@@ -56,11 +56,13 @@ interface PipeCache {
 
 let cache: PipeCache | null = null;
 
+export type { PipeCache };
+
 /**
  * Lazy-initialise GPU device + pipelines. Re-creates buffers/pipelines if
  * the primary count changes (matches makePipes() early-out in the HTML).
  */
-async function ensurePipelines(np: number, log: LogFn): Promise<PipeCache | null> {
+export async function ensurePipelines(np: number, log: LogFn): Promise<PipeCache | null> {
   if (cache && cache.np === np) return cache;
 
   if (!cache) {

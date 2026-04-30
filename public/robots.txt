@@ -1,6 +1,6 @@
-# https://webgpu-dna.vercel.app
+# https://webgpudna.com
 User-agent: *
 Allow: /
 Disallow: /dumps/
 
-Sitemap: https://webgpu-dna.vercel.app/sitemap.xml
+Sitemap: https://webgpudna.com/sitemap.xml

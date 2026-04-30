@@ -1,0 +1,153 @@
+  <!DOCTYPE html>
+  <html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WGDNA-4D viewer · WebGPU Geant4-DNA</title>
+    <meta name="description" content="Interactive 4D viewer for Geant4-DNA radical chemistry snapshots. Watch ionizing radiation tracks, OH/eaq/H/H3O+ radical diffusion and recombination across 6 decades of time,
+  validated against Geant4 11.4.1, in any WebGPU-capable browser." />
+    <meta name="theme-color" content="#050507" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta property="og:title" content="WGDNA-4D viewer" />
+    <meta property="og:description" content="Browser-native 4D visualization of validated Geant4-DNA Monte Carlo radical chemistry — track structure to 1 microsecond, in WebGPU." />
+    <meta property="og:image" content="/og-image.png" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <style>
+      html, body { margin: 0; padding: 0; height: 100%; background: #050507; color: #c8c8d0;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow: hidden; }
+      #c { display: block; width: 100vw; height: 100vh; }
+      .panel { position: absolute; top: 12px; left: 12px; background: rgba(8, 8, 14, 0.85);
+        border: 1px solid #1a1a26; border-radius: 10px; padding: 12px 14px; font-size: 12px;
+        backdrop-filter: blur(12px); max-width: 380px; max-height: calc(100vh - 24px); overflow-y: auto; }
+      .panel::-webkit-scrollbar { width: 6px; }
+      .panel::-webkit-scrollbar-thumb { background: #2a2a3a; border-radius: 3px; }
+      .panel h1 { margin: 0; font-size: 13px; color: #e8e8f0; letter-spacing: 0.04em;
+        display: flex; align-items: baseline; gap: 8px; }
+      .panel h1 .tag { font-size: 9px; font-weight: normal; color: #5a8af0;
+        letter-spacing: 0.1em; text-transform: uppercase; }
+      .panel small { color: #6a6a7a; display: block; margin: 6px 0 10px;
+        font-size: 11px; line-height: 1.4; }
+      .row { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+      .row.tight { margin: 4px 0; }
+      input[type=file] { font-family: inherit; font-size: 11px; color: #c8c8d0; }
+      input[type=range] { flex: 1; accent-color: #5a8af0; }
+      input[type=number] { width: 56px; background: #1a1a26; color: #c8c8d0;
+        border: 1px solid #2a2a3a; border-radius: 4px; padding: 2px 4px;
+        font-family: inherit; font-size: 11px; }
+      button { background: #1a1a26; color: #c8c8d0; border: 1px solid #2a2a3a;
+        padding: 4px 10px; border-radius: 4px; font-family: inherit; font-size: 11px;
+        cursor: pointer; transition: background 0.12s; }
+      button:hover { background: #22222e; }
+      button:active { transform: translateY(1px); }
+      button.primary { background: #1f3a8a; border-color: #2a4d9a; color: #fff; }
+      button.primary:hover { background: #2a4ba0; }
+      .meta { color: #8a8a9a; font-size: 11px; line-height: 1.5; margin-top: 8px; }
+      .meta b { color: #c8c8d0; }
+      #status { margin-top: 8px; color: #5a8af0; min-height: 14px; font-size: 11px; }
+      .checkpoints { display: flex; gap: 4px; flex-wrap: wrap; margin: 6px 0; }
+      .checkpoints button { padding: 2px 6px; font-size: 10px; min-width: 36px; }
+      .checkpoints button.active { background: #5a8af0; color: #050507; border-color: #5a8af0; }
+      .species { display: flex; flex-wrap: wrap; gap: 6px 10px; margin: 6px 0 8px; }
+      .species label { display: flex; align-items: center; gap: 4px; font-size: 10px;
+        color: #b0b0c0; cursor: pointer; user-select: none; }
+      .species i { display: inline-block; width: 8px; height: 8px; border-radius: 2px;
+        box-shadow: 0 0 6px currentColor; }
+      .species input[type=checkbox] { margin: 0; accent-color: #5a8af0; width: 11px; height: 11px; }
+      .section-h { color: #6a6a7a; font-size: 9px; letter-spacing: 0.15em;
+        text-transform: uppercase; margin: 10px 0 4px; }
+      details { margin-top: 8px; border-top: 1px solid #1a1a26; padding-top: 6px; }
+      details summary { cursor: pointer; color: #8a8a9a; font-size: 10px;
+        letter-spacing: 0.1em; text-transform: uppercase; list-style: none; user-select: none; }
+      details summary::before { content: '▸ '; }
+      details[open] summary::before { content: '▾ '; }
+      .credits { margin-top: 10px; padding-top: 8px; border-top: 1px solid #1a1a26;
+        color: #5a5a6a; font-size: 10px; line-height: 1.5; }
+      .credits a { color: #5a8af0; text-decoration: none; }
+      .credits a:hover { text-decoration: underline; }
+      kbd { background: #1a1a26; border: 1px solid #2a2a3a; border-bottom-width: 2px;
+        border-radius: 3px; padding: 0 4px; font-size: 9px; color: #b0b0c0; }
+      .drop-overlay { position: fixed; inset: 0; background: rgba(8, 12, 24, 0.75);
+        backdrop-filter: blur(6px); display: none; align-items: center; justify-content: center;
+        font-size: 18px; color: #5a8af0; letter-spacing: 0.1em; z-index: 10;
+        pointer-events: none; border: 3px dashed #5a8af0; }
+      .drop-overlay.active { display: flex; }
+    </style>
+  </head>
+  <body>
+    <canvas id="c"></canvas>
+    <div class="panel">
+      <h1>WGDNA-4D viewer <span class="tag">webgpudna · kernel-fusion</span></h1>
+      <small>Browser-native 4D visualization of Geant4-DNA radical chemistry. Drop a snapshot <code>.bin</code> or pick a file below.</small>
+      <div class="row">
+        <input type="file" id="file" accept=".bin" />
+      </div>
+      <div class="row">
+        <span style="min-width: 28px;">t =</span>
+        <input type="range" id="t-slider" min="0" max="7" value="0" step="1" disabled />
+        <span id="t-label" style="min-width: 70px; text-align: right;">—</span>
+      </div>
+      <div class="row tight">
+        <button id="play-btn" class="primary" title="Spacebar">▶ play</button>
+        <span style="font-size: 10px; color: #6a6a7a;">×</span>
+        <input type="number" id="speed" value="1.0" min="0.1" max="20" step="0.1" />
+        <span style="font-size: 10px; color: #6a6a7a;">cp/s</span>
+        <button id="reset-cam" title="Reset camera (R)">⤾ reset</button>
+        <button id="screenshot" title="Save PNG (S)">📷</button>
+      </div>
+      <div class="checkpoints" id="checkpoints"></div>
+      <div class="row tight" style="margin-top:8px">
+        <span style="font-size:10px;color:#6a6a7a;min-width:36px">view</span>
+        <select id="view-mode" style="flex:1;background:#1a1a26;color:#c8c8d0;border:1px solid #2a2a3a;border-radius:4px;padding:3px 6px;font-family:inherit;font-size:11px">
+          <option value="sprites">sprites — particle dots (default)</option>
+          <option value="volume">volume — ray-marched nebula</option>
+        </select>
+      </div>
+      <div class="row tight" id="vol-row-quality" style="display:none">
+        <span style="font-size:10px;color:#6a6a7a;min-width:36px">res</span>
+        <select id="vol-quality" style="flex:1;background:#1a1a26;color:#c8c8d0;border:1px solid #2a2a3a;border-radius:4px;padding:3px 6px;font-family:inherit;font-size:11px">
+          <option value="128">128³ — fast</option>
+          <option value="192">192³ — sharp</option>
+          <option value="256">256³ — max detail</option>
+        </select>
+      </div>
+      <div class="row tight" id="vol-row-color" style="display:none">
+        <span style="font-size:10px;color:#6a6a7a;min-width:36px">color</span>
+        <select id="vol-color" style="flex:1;background:#1a1a26;color:#c8c8d0;border:1px solid #2a2a3a;border-radius:4px;padding:3px 6px;font-family:inherit;font-size:11px">
+          <option value="density">density — cool→hot ramp</option>
+          <option value="species">by species — RGB blend</option>
+        </select>
+      </div>
+      <div class="row tight" style="margin:6px 0 0 0;gap:14px;flex-wrap:wrap">
+        <label style="font-size:10px;color:#b0b0c0;display:flex;align-items:center;gap:4px;cursor:pointer">
+          <input type="checkbox" id="bloom" style="accent-color:#5a8af0;width:11px;height:11px;margin:0" /> bloom
+        </label>
+        <label style="font-size:10px;color:#b0b0c0;display:flex;align-items:center;gap:4px;cursor:pointer">
+          <input type="checkbox" id="tracks" style="accent-color:#5a8af0;width:11px;height:11px;margin:0" /> track footprint
+        </label>
+        <label style="font-size:10px;color:#b0b0c0;display:flex;align-items:center;gap:4px;cursor:pointer" title="Volume + sprite overlay — verifies the two render paths agree">
+          <input type="checkbox" id="compare" style="accent-color:#5a8af0;width:11px;height:11px;margin:0" /> compare
+        </label>
+      </div>
+      <div class="section-h">species</div>
+      <div class="species" id="species-toggles"></div>
+      <div class="meta" id="meta">No snapshot loaded.</div>
+      <div id="status"></div>
+      <details>
+        <summary>Keyboard shortcuts</summary>
+        <div style="margin-top:6px;font-size:10px;line-height:1.8;color:#8a8a9a">
+          <kbd>Space</kbd> play/pause · <kbd>←</kbd>/<kbd>→</kbd> step · <kbd>R</kbd> reset cam · <kbd>S</kbd> screenshot · <kbd>F</kbd> fullscreen
+        </div>
+      </details>
+      <div class="credits">
+        Generated by the <a href="/" target="_blank">webgpudna</a> validation harness.
+        Kernel-fused per-electron Monte Carlo + Karamitros 2011 IRT chemistry, validated against
+        Geant4 11.4.1 dnaphysics ntuple to within published-version reproducibility.
+        <br />
+        Repo: <a href="https://github.com/abgnydn/webgpu-dna" target="_blank">github.com/abgnydn/webgpu-dna</a>
+      </div>
+    </div>
+    <script type="module" src="/src/splat/main.ts"></script>
+  </body>
+  </html>

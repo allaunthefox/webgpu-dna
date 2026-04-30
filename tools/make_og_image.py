@@ -172,7 +172,7 @@ def main():
         x += max(vw, lw) + gap
 
     # Right-side URL
-    url = "webgpu-dna.vercel.app"
+    url = "webgpudna.com"
     uw = draw.textlength(url, font=font_tag)
     draw.text((W - 64 - uw, H - 52), url, font=font_tag, fill=DM)
 

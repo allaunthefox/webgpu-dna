@@ -11,7 +11,20 @@ import type { Pipelines } from '../gpu/pipelines';
 import { CHEM_N, HASH_SIZE } from '../physics/constants';
 import { seedChemRNG } from '../gpu/buffers';
 import { chemMeasure } from './measure';
-import type { ChemCheckpoint, ChemResult } from '../physics/types';
+import type { ChemCheckpoint, ChemResult, ChemSnapshot } from '../physics/types';
+
+/** Options accepted by runChemistry. Default: production behaviour (no snapshot). */
+export interface RunChemistryOptions {
+  /** When true, captures chem_pos + chem_alive at every checkpoint (t=0 plus
+   *  the 7 schedule entries) into the returned `ChemResult.snapshots` field.
+   *  Used by the 4D splat exporter; off by default to keep the validation
+   *  hot path allocation-free. */
+  dump_snapshots?: boolean;
+  /** Number of leading radicals to dump per checkpoint. The full chem_pos
+   *  buffer (~13 M radicals at 10 keV) is far too large for a browser blob,
+   *  so we subsample. Default 50 000 → ~6.4 MB across 8 checkpoints. */
+  snapshot_n?: number;
+}
 
 /**
  * Stage 5 V3e chemistry schedule — PM-IRT with deterministic pair hash.
@@ -34,9 +47,42 @@ export async function runChemistry(
   rad_n_raw: number,
   E_eV: number,
   n_therm: number,
+  options?: RunChemistryOptions,
 ): Promise<ChemResult | null> {
   const chem_n = Math.min(rad_n_raw, CHEM_N);
   if (chem_n === 0) return null;
+
+  const dump = !!options?.dump_snapshots;
+  const snap_n = dump ? Math.min(options?.snapshot_n ?? 50_000, chem_n) : 0;
+
+  // Pre-allocate per-checkpoint readback buffers (1 t=0 + 7 schedule entries = 8).
+  const NUM_SNAPS = 1 + CHEM_SCHEDULE.length;
+  const snapPosRBs: GPUBuffer[] = [];
+  const snapAliveRBs: GPUBuffer[] = [];
+  if (dump && snap_n > 0) {
+    for (let i = 0; i < NUM_SNAPS; i++) {
+      snapPosRBs.push(
+        device.createBuffer({
+          size: snap_n * 16,
+          usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+        }),
+      );
+      snapAliveRBs.push(
+        device.createBuffer({
+          size: snap_n * 4,
+          usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+        }),
+      );
+    }
+  }
+
+  const captureSnapshot = (k: number): void => {
+    if (!dump || snap_n === 0) return;
+    const enc = device.createCommandEncoder();
+    enc.copyBufferToBuffer(buffers.chemPos, 0, snapPosRBs[k], 0, snap_n * 16);
+    enc.copyBufferToBuffer(buffers.chemAlive, 0, snapAliveRBs[k], 0, snap_n * 4);
+    device.queue.submit([enc.finish()]);
+  };
 
   const stride = 1;
 
@@ -85,6 +131,7 @@ export async function runChemistry(
 
   // t=0 checkpoint (after thermalization).
   const t0_state = await chemMeasure(device, buffers, pipelines, chem_n);
+  captureSnapshot(0);
   timeline.push({
     label: 't=0',
     t_ns: 0,
@@ -142,6 +189,7 @@ export async function runChemistry(
       prod_H2O2: state.prod_H2O2,
       prod_H2: state.prod_H2,
     });
+    captureSnapshot(timeline.length - 1);
   }
 
   const t_wall = performance.now() - t_wall_start;
@@ -177,5 +225,23 @@ export async function runChemistry(
     cp.G_H2   = per100 > 0 ? (cp.prod_H2 ?? 0) / per100 : 0;
   }
 
-  return { chem_n, t_wall, timeline, chem_pos_final, chem_alive_final, deposited_eV };
+  // Resolve per-checkpoint readbacks (if requested) and assemble snapshots[].
+  let snapshots: ChemSnapshot[] | undefined;
+  if (dump && snap_n > 0) {
+    await Promise.all([
+      ...snapPosRBs.map((b) => b.mapAsync(GPUMapMode.READ)),
+      ...snapAliveRBs.map((b) => b.mapAsync(GPUMapMode.READ)),
+    ]);
+    snapshots = timeline.map((cp, k) => ({
+      label: cp.label,
+      t_ns: cp.t_ns,
+      n: snap_n,
+      pos: new Float32Array(snapPosRBs[k].getMappedRange().slice(0) as ArrayBuffer),
+      alive: new Uint32Array(snapAliveRBs[k].getMappedRange().slice(0) as ArrayBuffer),
+    }));
+    snapPosRBs.forEach((b) => { b.unmap(); b.destroy(); });
+    snapAliveRBs.forEach((b) => { b.unmap(); b.destroy(); });
+  }
+
+  return { chem_n, t_wall, timeline, chem_pos_final, chem_alive_final, deposited_eV, snapshots };
 }

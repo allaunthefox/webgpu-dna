@@ -4,6 +4,7 @@
  */
 
 import { runValidation } from './app';
+import { exportSnapshotAt10keV } from './splat/export';
 import { createLogger } from './ui/log';
 
 const lg = createLogger('log');
@@ -51,6 +52,31 @@ function main(): void {
       const log = $('log');
       if (tb) tb.innerHTML = '';
       if (log) log.innerHTML = '';
+    };
+  }
+
+  const exportBtn = $('export-4d') as HTMLButtonElement | null;
+  if (exportBtn) {
+    exportBtn.onclick = async () => {
+      exportBtn.disabled = true;
+      if (runBtn) runBtn.disabled = true;
+      if (resetBtn) resetBtn.disabled = true;
+      try {
+        await exportSnapshotAt10keV({
+          np: Math.round(readNumber('np', 4096)),
+          boxNm: readNumber('box', 15000),
+          ceEV: readNumber('cut', 7.4),
+          log: lg,
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        lg(`Export error: ${msg}`, 'err');
+        console.error(e);
+      } finally {
+        exportBtn.disabled = false;
+        if (runBtn) runBtn.disabled = false;
+        if (resetBtn) resetBtn.disabled = false;
+      }
     };
   }
 

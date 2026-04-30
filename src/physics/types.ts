@@ -52,6 +52,16 @@ export interface ChemCheckpoint {
   prod_H2?: number;
 }
 
+/** Per-checkpoint snapshot of radical positions + alive flags. Subsampled
+ *  to the first `n` radicals to keep blob size tractable for a 4D viewer. */
+export interface ChemSnapshot {
+  label: string;
+  t_ns: number;
+  n: number;          // number of subsampled radicals stored
+  pos: Float32Array;  // length = 4*n  (xyz + species/pid packed in w)
+  alive: Uint32Array; // length = n    (1=alive, 0=reacted)
+}
+
 export interface ChemResult {
   chem_n: number;
   t_wall: number;
@@ -59,6 +69,8 @@ export interface ChemResult {
   chem_pos_final: Float32Array | null;
   chem_alive_final: Uint32Array | null;
   deposited_eV?: number;
+  /** Filled only when runChemistry is invoked with `dump_snapshots: true`. */
+  snapshots?: ChemSnapshot[];
 }
 
 /** Per-species alive snapshot from chemMeasure() */
