@@ -4,7 +4,12 @@
  */
 
 import { runValidation } from './app';
-import { exportSnapshotAt10keV } from './splat/export';
+import {
+  generateSnapshotAt10keV,
+  openInViewer,
+  downloadBlob,
+  exportSnapshotAt10keV,
+} from './splat/export';
 import { createLogger } from './ui/log';
 
 const lg = createLogger('log');
@@ -55,6 +60,40 @@ function main(): void {
     };
   }
 
+  // "🌌 Visualize chemistry" — primary CTA. Runs one 10 keV pass with snapshot
+  // capture, then opens the 4D viewer in a new tab and hands the blob over via
+  // postMessage. No download/upload step.
+  const vizBtn = $('visualize-4d') as HTMLButtonElement | null;
+  if (vizBtn) {
+    vizBtn.onclick = async () => {
+      vizBtn.disabled = true;
+      if (runBtn) runBtn.disabled = true;
+      if (resetBtn) resetBtn.disabled = true;
+      try {
+        const r = await generateSnapshotAt10keV({
+          np: Math.round(readNumber('np', 4096)),
+          boxNm: readNumber('box', 15000),
+          ceEV: readNumber('cut', 7.4),
+          log: lg,
+        });
+        if (r) {
+          openInViewer(r.blob, lg);
+          lg(`Opened viewer with ${r.numCheckpoints} checkpoints (${r.sizeMB} MB).`, 'ok');
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        lg(`Visualize error: ${msg}`, 'err');
+        console.error(e);
+      } finally {
+        vizBtn.disabled = false;
+        if (runBtn) runBtn.disabled = false;
+        if (resetBtn) resetBtn.disabled = false;
+      }
+    };
+  }
+
+  // "⬇ Save .bin" — secondary CTA. Runs the same pass but downloads the file
+  // for offline use (e.g. shipping it as the demo default in /public/).
   const exportBtn = $('export-4d') as HTMLButtonElement | null;
   if (exportBtn) {
     exportBtn.onclick = async () => {
@@ -79,6 +118,9 @@ function main(): void {
       }
     };
   }
+
+  // Silence unused-import warning for downloadBlob (kept exported for callers).
+  void downloadBlob;
 
   lg('Geant4-DNA validation harness (TypeScript modular build)');
   lg('Click "Run validation" to measure CSDA range and stopping power vs NIST ESTAR.');

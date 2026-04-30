@@ -421,6 +421,7 @@
       <a href="#compare">Compare</a>
       <a href="#features">Physics</a>
       <a href="#related" class="hide-sm">Related</a>
+      <a href="#viewer">Viewer</a>
       <a href="#harness">Run</a>
       <a href="https://github.com/abgnydn/webgpu-dna" class="hide-sm" target="_blank" rel="noopener">GitHub ↗</a>
     </div>
@@ -438,6 +439,7 @@
   </p>
   <div class="cta">
     <a class="btn primary" href="#harness">Run the validation →</a>
+    <a class="btn secondary" href="/splat.html">Open 4D viewer ↗</a>
     <a class="btn secondary" href="https://github.com/abgnydn/webgpu-dna" target="_blank" rel="noopener">View source on GitHub</a>
   </div>
   <div class="warn-box">
@@ -626,6 +628,44 @@
   </div>
 </section>
 
+<section id="viewer">
+  <h2>Watch the chemistry, in 4D</h2>
+  <p class="sublead">
+    Every validation run can hand its radical-chemistry result straight to a WebGPU viewer that plays back the full evolution: <strong>50,000 OH / e⁻aq / H / H₃O⁺ radicals diffusing and recombining across 6 decades of time, 1 ps → 1 μs</strong>, on the same B-DNA fiber grid the harness scored damage on. No download step — clicking <strong>🌌 Visualize chemistry</strong> below opens it in a new tab with the snapshot already loaded.
+  </p>
+
+  <div class="related-grid">
+    <div class="related-card" style="cursor:default">
+      <div class="related-tag">Sprites</div>
+      <h3>Per-particle dots</h3>
+      <p>One billboard per radical, color-coded by species, with smooth time interpolation between checkpoints. The clearest read of where individual radicals are.</p>
+    </div>
+    <div class="related-card" style="cursor:default">
+      <div class="related-tag">Volume</div>
+      <h3>Ray-marched density</h3>
+      <p>Per-frame compute splat into a 128³–256³ atomic voxel grid, then a fullscreen ray-march with cool→pearl→amber color ramp. Reads the cloud as one continuous 3D form — the &ldquo;nebula&rdquo; mode.</p>
+    </div>
+    <div class="related-card" style="cursor:default">
+      <div class="related-tag">By species</div>
+      <h3>4-channel RGB blend</h3>
+      <p>Four atomic counters per voxel — OH (cyan), e⁻aq (magenta), H (yellow), H₃O⁺ (orange) — blended in a single ray-march. Toggle any species off and watch its share of the cloud disappear.</p>
+    </div>
+    <div class="related-card" style="cursor:default">
+      <div class="related-tag">Tracks</div>
+      <h3>Ionization footprint</h3>
+      <p>Overlay the initial radical positions as warm dots — exactly where the electron deposited energy. The cause behind the chemistry shape the volume mode shows you.</p>
+    </div>
+  </div>
+
+  <p class="sublead">
+    Two correctness checks ride along inside the viewer. The <strong>round-trip panel</strong> verifies that the .bin contains exactly what the harness computed (alive-count monotonicity, species partition sum, position finiteness). The <strong>compare</strong> overlay draws sprites on top of the volume so the two render paths can be visually checked across all 8 checkpoints and any camera angle — no drift means the splat math is faithful to the data.
+  </p>
+  <div class="cta">
+    <a class="btn primary" href="#harness">Run a sim and visualize →</a>
+    <a class="btn secondary" href="/splat.html">Open viewer (drop your own .bin) ↗</a>
+  </div>
+</section>
+
 <section id="harness">
   <div class="harness-head">
     <div>
@@ -639,8 +679,9 @@
 
   <div class="controls">
     <button class="btn" id="run">▶ Run validation</button>
+    <button class="btn primary" id="visualize-4d" title="Run one 10 keV pass and open the 4D viewer in a new tab — no download step.">🌌 Visualize chemistry</button>
     <button class="btn bs" id="reset">Reset</button>
-    <button class="btn bs" id="export-4d" title="Run one 10 keV pass with per-checkpoint chem_pos snapshots and download as a .bin for the 4D viewer">⬇ Export 4D snapshot</button>
+    <button class="btn bs" id="export-4d" title="Run one 10 keV pass and download the snapshot .bin for offline use">⬇ Save .bin</button>
     <label>N / energy <input type="number" id="np" value="4096" min="1024" max="32768" step="1024"></label>
     <label>Box (nm) <input type="number" id="box" value="15000" min="1000" max="50000" step="1000"></label>
     <label>Cutoff (eV) <input type="number" id="cut" value="7.4" min="1" max="100" step="0.1"></label>

@@ -1831,8 +1831,14 @@ canvas.addEventListener('wheel', (e) => {
 // Polish: drag-drop, play/pause, species toggles, reset cam, screenshot
 // -----------------------------------------------------------------------------
 
+/** Most-recently-loaded raw blob — fed to the in-viewer "Save .bin" button. */
+let lastLoadedBlob: Blob | null = null;
+let lastLoadedFilename: string = '';
+
 async function loadFile(f: File): Promise<void> {
   setStatus(`Loading ${f.name} (${(f.size / 1024 / 1024).toFixed(2)} MB)…`);
+  lastLoadedBlob = f;
+  lastLoadedFilename = f.name;
   try {
     const buf = await f.arrayBuffer();
     const blob = parseBlob(buf);
@@ -2069,5 +2075,56 @@ window.addEventListener('keydown', (e) => {
 
 buildSpeciesToggles();
 
+// Save-bin button — exports whatever blob was loaded (handoff, fetch, or pick).
+const saveBinBtn = document.getElementById('save-bin') as HTMLButtonElement | null;
+saveBinBtn?.addEventListener('click', () => {
+  if (!lastLoadedBlob) return;
+  const url = URL.createObjectURL(lastLoadedBlob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = lastLoadedFilename || 'wgdna4d-snapshot.bin';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+});
+
+/**
+ * Try to auto-load a snapshot, in order:
+ *   1) `#handoff=1` in URL → wait for window.opener.postMessage with the blob
+ *   2) `/wgdna-default.bin` shipped with the build (for cold landings)
+ *   3) Nothing — show the file picker / drop overlay as before
+ */
+async function autoLoadSnapshot(): Promise<void> {
+  if (location.hash.includes('handoff=1') && window.opener) {
+    setStatus('Waiting for snapshot from harness…');
+    const got = await new Promise<File | null>((resolve) => {
+      const t = setTimeout(() => {
+        window.removeEventListener('message', handler);
+        resolve(null);
+      }, 15_000);
+      const handler = (e: MessageEvent): void => {
+        if (e.data?.type !== 'wgdna-snapshot' || !(e.data.blob instanceof Blob)) return;
+        clearTimeout(t);
+        window.removeEventListener('message', handler);
+        resolve(new File([e.data.blob], 'harness-handoff.bin'));
+      };
+      window.addEventListener('message', handler);
+      try { window.opener.postMessage('splat-ready', '*'); } catch { /* opener gone */ }
+    });
+    if (got) { await loadFile(got); return; }
+    setStatus('No handoff received. Trying default snapshot…');
+  }
+
+  // Cold landing: try the shipped default. 404 is silently OK.
+  try {
+    const resp = await fetch('/wgdna-default.bin', { cache: 'force-cache' });
+    if (resp.ok) {
+      const buf = await resp.arrayBuffer();
+      const f = new File([buf], 'wgdna-default.bin');
+      setStatus('Loading bundled demo snapshot…');
+      await loadFile(f);
+    }
+  } catch { /* offline / 404 — fall through to file picker */ }
+}
+
 // Bootstrap.
-initGPU().then((ok) => { if (ok) frame(); });
+initGPU().then((ok) => { if (ok) { frame(); autoLoadSnapshot(); } });

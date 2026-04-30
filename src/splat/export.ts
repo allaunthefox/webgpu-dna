@@ -113,7 +113,7 @@ export function packSnapshotBlob(
 }
 
 /** Trigger a browser download of `blob` as `filename`. */
-function downloadBlob(blob: Blob, filename: string): void {
+export function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -124,28 +124,34 @@ function downloadBlob(blob: Blob, filename: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
+export interface SnapshotResult {
+  blob: Blob;
+  filename: string;
+  sizeMB: string;
+  numCheckpoints: number;
+}
+
 /**
- * Run one 10 keV pass with snapshot capture and download the resulting blob.
- *
- * Reuses the validation harness's pipeline cache via ensurePipelines().
+ * Run one 10 keV pass with snapshot capture and return the blob (no download).
+ * Caller decides what to do with it: download, hand off to viewer, etc.
  */
-export async function exportSnapshotAt10keV(cfg: ExportConfig): Promise<void> {
+export async function generateSnapshotAt10keV(cfg: ExportConfig): Promise<SnapshotResult | null> {
   const { np, boxNm, ceEV, log } = cfg;
   const snapshot_n = cfg.snapshot_n ?? 50_000;
 
   const cc = await ensurePipelines(np, log);
   if (!cc) {
-    log('GPU init failed, cannot export snapshot.', 'err');
-    return;
+    log('GPU init failed, cannot generate snapshot.', 'err');
+    return null;
   }
   const { device, buffers, pipelines } = cc;
 
-  log(`Snapshot export: ${np} primaries @ 10 keV, snap_n=${snapshot_n}`, 'data');
+  log(`Snapshot capture: ${np} primaries @ 10 keV, snap_n=${snapshot_n}`, 'data');
 
   const dna = buildDNATarget(DNA_LENGTH_NM, DNA_GRID_N, DNA_SPACING_NM);
 
   const chemCallback = async (
-    radBuf: Float32Array,
+    _radBuf: Float32Array,
     radN: number,
     nTherm: number,
     E_eV: number,
@@ -158,8 +164,8 @@ export async function exportSnapshotAt10keV(cfg: ExportConfig): Promise<void> {
   const r = await runAtEnergy(device, buffers, pipelines, 10_000, np, boxNm, ceEV, dna, chemCallback);
 
   if (!r.chem_result?.snapshots || !r.rad_buf_final) {
-    log('Snapshot export: no chemistry result returned.', 'err');
-    return;
+    log('Snapshot capture: no chemistry result returned.', 'err');
+    return null;
   }
 
   const initialN = Math.min(r.rad_n_stored, snapshot_n);
@@ -174,10 +180,45 @@ export async function exportSnapshotAt10keV(cfg: ExportConfig): Promise<void> {
   const sizeMB = (blob.size / 1024 / 1024).toFixed(2);
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const filename = `wgdna4d-${np}p-${snapshot_n}n-${stamp}.bin`;
-  downloadBlob(blob, filename);
 
-  log(
-    `Snapshot export: wrote ${filename} (${sizeMB} MB, ${r.chem_result.snapshots.length} checkpoints)`,
+  return { blob, filename, sizeMB, numCheckpoints: r.chem_result.snapshots.length };
+}
+
+/**
+ * Open the splat viewer in a new tab and hand off the blob via postMessage.
+ * The viewer signals readiness with a "splat-ready" message; we reply with
+ * { type: 'snapshot', blob }. If the popup is blocked, falls back to
+ * downloading the file so the user can open it manually.
+ */
+export function openInViewer(blob: Blob, log: LogFn): void {
+  const win = window.open('/splat.html#handoff=1', '_blank');
+  if (!win) {
+    log('Popup blocked. Falling back to download.', 'err');
+    downloadBlob(blob, 'wgdna4d-handoff.bin');
+    return;
+  }
+  const handler = (e: MessageEvent): void => {
+    if (e.source !== win) return;
+    if (e.data === 'splat-ready') {
+      win.postMessage({ type: 'wgdna-snapshot', blob }, '*');
+      window.removeEventListener('message', handler);
+    }
+  };
+  window.addEventListener('message', handler);
+  // Safety: stop listening after 30s in case the viewer never came up.
+  setTimeout(() => window.removeEventListener('message', handler), 30_000);
+}
+
+/**
+ * Backwards-compat: run + download in one call. Used by the "Save .bin"
+ * button if/when callers prefer the offline file path.
+ */
+export async function exportSnapshotAt10keV(cfg: ExportConfig): Promise<void> {
+  const r = await generateSnapshotAt10keV(cfg);
+  if (!r) return;
+  downloadBlob(r.blob, r.filename);
+  cfg.log(
+    `Snapshot export: wrote ${r.filename} (${r.sizeMB} MB, ${r.numCheckpoints} checkpoints)`,
     'ok',
   );
 }
