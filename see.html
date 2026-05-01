@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Watch radiation hit a cell — webgpudna</title>
+<meta name="description" content="When radiation hits one of your cells, water shatters into thousands of reactive chemicals that attack DNA. For 20 years, simulating it took a supercomputer. Now it runs in your browser. Click to watch.">
+<meta name="theme-color" content="#0a0a0f">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta property="og:title" content="Watch radiation hit a cell, in your browser">
+<meta property="og:description" content="A radiobiology simulator that used to need a supercomputer, now running in a browser tab. Click and watch a single electron damage DNA — live.">
+<meta property="og:image" content="/og-image.png">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://webgpudna.com/see.html">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Watch radiation hit a cell, in your browser">
+<meta name="twitter:description" content="A radiobiology simulator that used to need a supercomputer, now running in a browser tab.">
+<meta name="twitter:image" content="/og-image.png">
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+  :root{
+    --bg:#0a0a0f; --sf:#12121a; --s2:#1a1a26; --bd:#2a2a3a; --bd2:#3a3a4a;
+    --tx:#e8e8f0; --tx2:#b8b8c8; --dm:#8888a0;
+    --ac:#00d4aa; --ac2:#00b894; --warn:#fa0;
+    --mn:'JetBrains Mono',ui-monospace,monospace;
+    --sn:'Space Grotesk',system-ui,sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--tx);font-family:var(--sn);line-height:1.5;overflow-x:hidden}
+  a{color:var(--ac);text-decoration:none}
+  a:hover{text-decoration:underline}
+
+  /* Top nav — identical to / */
+  nav{position:sticky;top:0;z-index:100;background:rgba(10,10,15,0.85);backdrop-filter:blur(12px);border-bottom:1px solid var(--bd)}
+  nav .inner{max-width:1100px;margin:0 auto;padding:14px 24px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+  nav .brand{font-family:var(--mn);font-size:13px;font-weight:600;color:var(--tx);letter-spacing:-0.01em}
+  nav .brand span{color:var(--ac)}
+  nav .links{display:flex;gap:20px;font-family:var(--mn);font-size:11px}
+  nav .links a{color:var(--dm)}
+  nav .links a:hover{color:var(--ac);text-decoration:none}
+
+  /* Hero — same widths/paddings/type as / */
+  .hero{max-width:1100px;margin:0 auto;padding:80px 24px 60px;position:relative}
+  .hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at top,rgba(0,212,170,0.08),transparent 60%);pointer-events:none;z-index:-1}
+  .tag{display:inline-block;font-family:var(--mn);font-size:10px;color:var(--ac);border:1px solid var(--ac);padding:4px 10px;border-radius:20px;margin-bottom:20px;letter-spacing:0.05em;text-transform:uppercase}
+  h1.title{font-size:clamp(32px,5vw,56px);font-weight:700;line-height:1.05;letter-spacing:-0.03em;margin-bottom:18px;max-width:880px}
+  h1.title em{font-style:normal;color:var(--ac);background:linear-gradient(90deg,var(--ac),var(--ac2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  p.lead{font-size:clamp(15px,1.6vw,18px);color:var(--tx2);max-width:720px;margin-bottom:32px;line-height:1.6}
+  .cta{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+  .cta .btn{font-family:var(--mn);font-size:12px;font-weight:600;padding:12px 22px;border-radius:6px;border:none;cursor:pointer;transition:transform 0.15s,box-shadow 0.15s;letter-spacing:0.02em;display:inline-flex;align-items:center;gap:8px}
+  .cta .btn.primary{background:var(--ac);color:var(--bg)}
+  .cta .btn.primary:hover{transform:translateY(-1px);box-shadow:0 8px 24px rgba(0,212,170,0.3);text-decoration:none}
+  .cta .btn.ghost{background:var(--sf);color:var(--tx);border:1px solid var(--bd2)}
+  .cta .btn.ghost:hover{background:var(--s2);border-color:var(--ac);text-decoration:none}
+  .meta-note{font-family:var(--mn);font-size:11px;color:var(--dm);margin-top:6px}
+
+  /* Section — matches / */
+  section{max-width:1100px;margin:0 auto;padding:40px 24px}
+  section h2{font-size:28px;font-weight:600;letter-spacing:-0.02em;margin-bottom:12px}
+  section h2 em{font-style:normal;color:var(--ac);background:linear-gradient(90deg,var(--ac),var(--ac2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  section p.sublead{color:var(--tx2);margin-bottom:28px;max-width:720px}
+
+  /* Story cards — uses same .card token shape as / */
+  .story{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-top:24px}
+  .scard{background:var(--sf);border:1px solid var(--bd);border-radius:8px;padding:24px;position:relative;overflow:hidden;transition:border-color 0.15s,transform 0.15s}
+  .scard:hover{border-color:var(--ac);transform:translateY(-2px)}
+  .scard .num{font-family:var(--mn);font-size:10px;color:var(--ac);letter-spacing:0.05em;text-transform:uppercase;margin-bottom:10px}
+  .scard h3{font-size:16px;font-weight:600;line-height:1.3;margin-bottom:10px;color:var(--tx)}
+  .scard p{font-size:13px;color:var(--tx2);line-height:1.6}
+  .scard .vis{height:80px;margin:6px 0 14px;border-radius:6px;background:#0e0e15;border:1px solid var(--bd);position:relative;overflow:hidden}
+  /* card 1: comet trail */
+  .vis-trail::before{content:'';position:absolute;top:50%;left:-20px;width:260px;height:2px;background:linear-gradient(90deg,transparent,var(--ac) 20%,#fff 70%,transparent);transform:translateY(-50%);animation:fly 3s linear infinite;filter:blur(0.4px)}
+  .vis-trail::after{content:'';position:absolute;top:50%;left:0;width:6px;height:6px;border-radius:50%;background:#fff;box-shadow:0 0 12px #fff,0 0 24px var(--ac);transform:translate(0,-50%);animation:dot 3s linear infinite}
+  @keyframes fly{0%{transform:translate(-30px,-50%) scaleX(0.4)}60%{transform:translate(280px,-50%) scaleX(1)}100%{transform:translate(380px,-50%) scaleX(0.2);opacity:0}}
+  @keyframes dot{0%{transform:translate(-10px,-50%);opacity:0}10%{opacity:1}90%{opacity:1;transform:translate(290px,-50%)}100%{opacity:0;transform:translate(360px,-50%)}}
+  /* card 2: radial cloud */
+  .vis-cloud{display:flex;align-items:center;justify-content:center}
+  .vis-cloud::before{content:'';position:absolute;width:120px;height:120px;border-radius:50%;background:radial-gradient(circle,rgba(0,212,170,0.6),rgba(255,200,80,0.2) 40%,transparent 75%);filter:blur(8px);animation:bloom 3s ease-in-out infinite}
+  @keyframes bloom{0%{transform:scale(0.4);opacity:0.4}50%{transform:scale(1);opacity:1}100%{transform:scale(1.2);opacity:0.2}}
+  /* card 3: helix strikes */
+  .vis-helix{position:relative}
+  .vis-helix::before,.vis-helix::after{content:'';position:absolute;left:24px;right:24px;top:50%;height:2px;background:linear-gradient(90deg,#444 0%,var(--tx2) 100%);border-radius:2px}
+  .vis-helix::before{transform:translateY(-8px) rotate(-2deg)}
+  .vis-helix::after{transform:translateY(8px) rotate(2deg)}
+  .vis-helix .strike{position:absolute;top:0;bottom:0;width:2px;background:var(--ac);box-shadow:0 0 8px var(--ac);animation:strike 2.4s ease-in-out infinite}
+  .vis-helix .strike:nth-child(1){left:30%;animation-delay:0s}
+  .vis-helix .strike:nth-child(2){left:55%;animation-delay:0.7s}
+  .vis-helix .strike:nth-child(3){left:75%;animation-delay:1.3s}
+  @keyframes strike{0%{opacity:0;transform:scaleY(0)}30%{opacity:1;transform:scaleY(1)}70%{opacity:1;transform:scaleY(1)}100%{opacity:0;transform:scaleY(0.6)}}
+
+  /* Numbers — borrows the .stats grid from / */
+  .nums{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1px;background:var(--bd);border:1px solid var(--bd);border-radius:8px;overflow:hidden;margin-top:24px}
+  .num-cell{background:var(--sf);padding:22px 22px 20px;position:relative;transition:background 0.2s;overflow:hidden}
+  .num-cell::before{content:'';position:absolute;top:0;left:35%;right:35%;height:2px;background:linear-gradient(90deg,transparent,var(--ac),transparent);opacity:0;transition:opacity 0.25s,left 0.3s,right 0.3s}
+  .num-cell:hover{background:var(--s2)}
+  .num-cell:hover::before{opacity:1;left:0;right:0}
+  .num-cell .v{font-family:var(--mn);font-size:22px;font-weight:600;color:var(--ac);letter-spacing:-0.02em;line-height:1.1}
+  .num-cell .l{font-size:12px;color:var(--tx2);margin-top:8px;line-height:1.55}
+  .num-cell .h{font-family:var(--mn);font-size:10px;color:var(--dm);margin-top:6px;letter-spacing:0.05em}
+
+  /* Tweet block — uses same surface tokens as .card */
+  .tweets{display:grid;gap:14px;margin-top:24px}
+  .tweet{background:var(--sf);border:1px solid var(--bd);border-radius:8px;padding:20px 22px;position:relative;transition:border-color 0.15s}
+  .tweet:hover{border-color:var(--bd2)}
+  .tweet p{font-size:14px;color:var(--tx);line-height:1.55;margin-bottom:14px}
+  .tweet .row{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+  .tweet .author{font-family:var(--mn);font-size:10px;color:var(--dm);letter-spacing:0.05em;text-transform:uppercase}
+  .tweet button{background:transparent;color:var(--tx2);border:1px solid var(--bd2);padding:7px 12px;border-radius:5px;font-family:var(--mn);font-size:11px;font-weight:600;cursor:pointer;transition:color 0.15s,border-color 0.15s;display:inline-flex;align-items:center;gap:6px}
+  .tweet button:hover{color:var(--ac);border-color:var(--ac)}
+  .tweet button.copied{color:var(--ac);border-color:var(--ac)}
+
+  /* Why-it-matters block */
+  .lyric{background:var(--sf);border:1px solid var(--bd);border-left:3px solid var(--ac);border-radius:8px;padding:26px 28px;margin-top:24px;max-width:820px}
+  .lyric p{font-size:15px;line-height:1.7;color:var(--tx)}
+  .lyric p + p{margin-top:10px}
+
+  /* Final CTA */
+  .final{max-width:1100px;margin:0 auto;padding:80px 24px 60px;text-align:center}
+  .final h2{font-size:clamp(28px,3.6vw,40px);font-weight:600;line-height:1.15;letter-spacing:-0.02em;margin-bottom:22px;max-width:760px;margin-left:auto;margin-right:auto}
+  .final h2 em{font-style:normal;color:var(--ac);background:linear-gradient(90deg,var(--ac),var(--ac2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .final .cta{justify-content:center}
+
+  /* Footer */
+  footer{border-top:1px solid var(--bd);padding:32px 24px;text-align:center;margin-top:20px}
+  footer p{font-family:var(--mn);font-size:11px;color:var(--dm);line-height:1.8}
+  footer a{color:var(--dm)}
+  footer a:hover{color:var(--ac);text-decoration:none}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="inner">
+    <div class="brand">webgpu<span>dna</span></div>
+    <div class="links">
+      <a href="/splat.html">⚡ See it</a>
+      <a href="/">technical site →</a>
+      <a href="https://github.com/abgnydn/webgpu-dna" target="_blank" rel="noopener">github</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <span class="tag">browser-native science</span>
+  <h1 class="title">When radiation hits a cell, <em>this is what happens</em>.</h1>
+  <p class="lead">
+    A single electron tears through water molecules. Thousands of reactive chemicals scatter, find DNA, and break it apart — all in a microsecond. For twenty years, simulating this took a supercomputer and a PhD. Now it runs in your browser tab.
+  </p>
+  <div class="cta">
+    <a class="btn primary" href="/splat.html">⚡ Watch it now →</a>
+    <a class="btn ghost" href="#what">what am I looking at?</a>
+  </div>
+  <p class="meta-note">No install. No signup. Free, forever. ~5 second load on a modern laptop.</p>
+</header>
+
+<section id="what">
+  <h2>What you'll see, <em>frame by frame</em>.</h2>
+  <p class="sublead">The viewer plays back a real simulated event in 4D — three spatial dimensions, plus time, scrubbing through a microsecond of radiation chemistry.</p>
+  <div class="story">
+    <article class="scard">
+      <div class="vis vis-trail"></div>
+      <div class="num">01 — the strike</div>
+      <h3>An electron arrives.</h3>
+      <p>It's been launched at 10,000 electron-volts — typical energy for medical X-rays. As it tears through water, it knocks electrons off molecules and slows down, leaving an ionization trail behind.</p>
+    </article>
+    <article class="scard">
+      <div class="vis vis-cloud"></div>
+      <div class="num">02 — the fallout</div>
+      <h3>Water shatters.</h3>
+      <p>Each ionization splits a water molecule into reactive chemicals — hydroxyl radicals (OH), solvated electrons (e⁻aq), hydrogen, hydronium. Tens of thousands per electron. They diffuse, react, recombine. This is the cloud you'll watch evolve.</p>
+    </article>
+    <article class="scard">
+      <div class="vis vis-helix">
+        <div class="strike"></div><div class="strike"></div><div class="strike"></div>
+      </div>
+      <div class="num">03 — the damage</div>
+      <h3>DNA gets hit.</h3>
+      <p>Some radicals find DNA strands. Most cause a single break. A few — the bad ones — break both strands within ten base pairs of each other. That's a double-strand break, the lesion behind cell death and mutation.</p>
+    </article>
+  </div>
+</section>
+
+<section>
+  <h2>Why anyone should care.</h2>
+  <div class="lyric">
+    <p>Cancer radiotherapy is dose calibration on this microsecond.</p>
+    <p>Astronaut shielding for Mars missions is dose calibration on this microsecond.</p>
+    <p>Whether your CT scan is safe is dose calibration on this microsecond.</p>
+    <p>For decades, only a handful of national-lab teams could see what you're about to see. Now anyone with a laptop can.</p>
+  </div>
+</section>
+
+<section>
+  <h2>The honest numbers.</h2>
+  <p class="sublead">It runs in a browser, but it isn't a toy. Validated, head-to-head, against the gold-standard scientific simulator (Geant4-DNA, the same code radiobiology labs cite in published papers).</p>
+  <div class="nums">
+    <div class="num-cell">
+      <div class="v">0.985×</div>
+      <div class="l">How far the electron travels — same as the reference, within 1.5%.</div>
+      <div class="h">2,714 nm vs 2,756 nm</div>
+    </div>
+    <div class="num-cell">
+      <div class="v">509</div>
+      <div class="l">Ionizations per electron — exact match to the reference simulator.</div>
+      <div class="h">vs 509.1 expected</div>
+    </div>
+    <div class="num-cell">
+      <div class="v">100.0%</div>
+      <div class="l">Energy is conserved across all 8 reference energies — no leaks.</div>
+      <div class="h">100 eV → 20 keV</div>
+    </div>
+    <div class="num-cell">
+      <div class="v">~6 sec</div>
+      <div class="l">To simulate 4,096 electrons on a laptop GPU.</div>
+      <div class="h">vs hours on CPU</div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>If you'd tweet this, <em>here's a head start</em>.</h2>
+  <p class="sublead">Three drafts, copy-and-go. Pick the voice that's closest to yours and edit freely.</p>
+  <div class="tweets" id="tweets">
+    <article class="tweet">
+      <p>Just clicked a button and watched 50,000 reactive radicals attack DNA in real time, in a browser tab. No install. webgpudna.com 🤯</p>
+      <div class="row">
+        <span class="author">— casual / awe</span>
+        <button class="copy" data-text="Just clicked a button and watched 50,000 reactive radicals attack DNA in real time, in a browser tab. No install. webgpudna.com 🤯">copy</button>
+      </div>
+    </article>
+    <article class="tweet">
+      <p>Geant4-DNA — the radiobiology Monte Carlo toolkit physicists run on HPC clusters — now runs in your browser via WebGPU. Validated against the 11.4.1 reference. Click "View ready demo" and watch a microsecond of radiation chemistry play. webgpudna.com</p>
+      <div class="row">
+        <span class="author">— technical</span>
+        <button class="copy" data-text="Geant4-DNA — the radiobiology Monte Carlo toolkit physicists run on HPC clusters — now runs in your browser via WebGPU. Validated against the 11.4.1 reference. Click 'View ready demo' and watch a microsecond of radiation chemistry play. webgpudna.com">copy</button>
+      </div>
+    </article>
+    <article class="tweet">
+      <p>One of the more 'wait, what?' demos I've seen lately — a working DNA-damage simulator running entirely in WebGPU. The kind of thing that needed a supercomputer last decade. webgpudna.com</p>
+      <div class="row">
+        <span class="author">— recommendation</span>
+        <button class="copy" data-text="One of the more 'wait, what?' demos I've seen lately — a working DNA-damage simulator running entirely in WebGPU. The kind of thing that needed a supercomputer last decade. webgpudna.com">copy</button>
+      </div>
+    </article>
+  </div>
+</section>
+
+<section class="final">
+  <h2>You can have all this <em>in five seconds</em>. Just click.</h2>
+  <div class="cta">
+    <a class="btn primary" href="/splat.html">⚡ Watch it now →</a>
+  </div>
+</section>
+
+<footer>
+  <p>
+    Built by <a href="https://barisgunaydin.com" target="_blank" rel="noopener">Ahmet Barış Günaydın</a> · Source on <a href="https://github.com/abgnydn/webgpu-dna" target="_blank" rel="noopener">GitHub</a> · MIT-licensed<br>
+    For the technical version with validation tables and reproducibility specs, head <a href="/">here →</a>
+  </p>
+</footer>
+
+<script>
+  // Copy buttons. Native clipboard API; falls back to a tiny textarea hack.
+  document.querySelectorAll('button.copy').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const txt = btn.getAttribute('data-text') || '';
+      const orig = btn.textContent;
+      try {
+        await navigator.clipboard.writeText(txt);
+      } catch {
+        const ta = document.createElement('textarea');
+        ta.value = txt;
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); } catch { /* nothing more we can do */ }
+        document.body.removeChild(ta);
+      }
+      btn.textContent = '✓ copied';
+      btn.classList.add('copied');
+      setTimeout(() => {
+        btn.textContent = orig;
+        btn.classList.remove('copied');
+      }, 1600);
+    });
+  });
+</script>
+
+</body>
+</html>

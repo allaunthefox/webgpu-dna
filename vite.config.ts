@@ -11,6 +11,7 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, 'index.html'),
         splat: resolve(__dirname, 'splat.html'),
+        see: resolve(__dirname, 'see.html'),
       },
     },
   },

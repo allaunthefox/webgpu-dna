@@ -108,7 +108,9 @@ const RENDER_SHADER = /* wgsl */ `
     species_mask: u32,         // bit i = species i visible (0..7)
     dna_x0: f32,               // DNA fiber start in nm
     dna_L: f32,                // DNA fiber length in nm
-    extras: vec4<f32>,         // x = sprite_intensity (compare-mode dimming)
+    extras: vec4<f32>,         // x=sprite_intensity, y=hit_intensity, z=slice_axis(int 0..3), w=slice_pos(0..1)
+    bbox_min: vec4<f32>,       // 16 B
+    bbox_span: vec4<f32>,      // 16 B (bbox_max - bbox_min)
   }
 
   @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -157,6 +159,17 @@ const RENDER_SHADER = /* wgsl */ `
       alive_factor = 0.0;
     }
 
+    // Slice cutaway. extras: x=sprite intensity, y=hit (ignored here),
+    // z=slice_axis (cast u32, 3=off), w=slice_pos in [0,1].
+    let ax = u32(u.extras.z);
+    if (ax < 3u) {
+      let comp = select(select(xyz.z, xyz.y, ax == 1u), xyz.x, ax == 0u);
+      let bmin = select(select(u.bbox_min.z, u.bbox_min.y, ax == 1u), u.bbox_min.x, ax == 0u);
+      let bspan = select(select(u.bbox_span.z, u.bbox_span.y, ax == 1u), u.bbox_span.x, ax == 0u);
+      let nrm  = (comp - bmin) / max(0.0001, bspan);
+      if (nrm > u.extras.w) { alive_factor = 0.0; }
+    }
+
     let center = u.view_proj * vec4<f32>(xyz, 1.0);
     let size = 0.012 * u.species_scale[min(s, 3u)];
 
@@ -186,7 +199,15 @@ const RENDER_SHADER = /* wgsl */ `
       default: { col = vec3<f32>(0.85, 0.85, 0.95); }
     }
 
-    let alpha = (1.0 - r2) * 0.6 * in.alive_factor * u.extras.x;
+    // Implicit-sphere shading: treat the disc as the projection of a sphere
+    // and reconstruct its surface normal. r=0 is the front-facing pole;
+    // r=1 is the silhouette. Combines a soft lambert fill with a rim glow.
+    let z = sqrt(max(0.0, 1.0 - r2));
+    let lam = 0.32 + 0.68 * z;            // never fully dark — particles are emissive
+    let rim = pow(1.0 - z, 4.0) * 1.4;    // bright halo at the silhouette
+    let core = exp(-r2 * 1.6);            // hot core that punches into bloom
+    let energy = (lam + rim + core) * 0.45;
+    let alpha = energy * in.alive_factor * u.extras.x;
     return vec4<f32>(col * alpha, alpha);
   }
 `;
@@ -203,16 +224,21 @@ const LINE_SHADER = /* wgsl */ `
     species_mask: u32,
     dna_x0: f32,
     dna_L: f32,
-    extras: vec4<f32>,         // unused here — present so struct matches the shared buffer size
+    extras: vec4<f32>,         // x=sprite intensity (unused here), y=hit_intensity_global
+    bbox_min: vec4<f32>,
+    bbox_span: vec4<f32>,
   }
 
   @group(0) @binding(0) var<uniform> u: Uniforms;
   @group(0) @binding(1) var<storage, read> fy: array<f32>;
   @group(0) @binding(2) var<storage, read> fz: array<f32>;
+  @group(0) @binding(3) var<storage, read> hit_a: array<f32>;
+  @group(0) @binding(4) var<storage, read> hit_b: array<f32>;
 
   struct VOut {
     @builtin(position) clip: vec4<f32>,
     @location(0) along: f32,
+    @location(1) hit: f32,
   }
 
   @vertex
@@ -222,6 +248,7 @@ const LINE_SHADER = /* wgsl */ `
     var out: VOut;
     out.clip = u.view_proj * vec4<f32>(pos, 1.0);
     out.along = along;
+    out.hit = mix(hit_a[ii], hit_b[ii], u.t_frac) * u.extras.y;
     return out;
   }
 
@@ -229,8 +256,14 @@ const LINE_SHADER = /* wgsl */ `
   fn fs(in: VOut) -> @location(0) vec4<f32> {
     // Soft taper toward fiber ends so they don't visually clip into nothing.
     let edge = 1.0 - smoothstep(0.85, 1.0, abs(in.along * 2.0 - 1.0));
-    let alpha = 0.18 * edge;
-    return vec4<f32>(0.45 * alpha, 0.65 * alpha, 0.85 * alpha, alpha);
+    // Base steel-blue + cyan flare proportional to local hit intensity.
+    let baseAlpha = 0.18 * edge;
+    let baseCol = vec3<f32>(0.45, 0.65, 0.85);
+    let hot = clamp(in.hit, 0.0, 1.0);
+    let hitCol = vec3<f32>(0.30, 1.10, 1.40);
+    let alpha = baseAlpha * (1.0 + hot * 5.0);
+    let col = mix(baseCol, hitCol, hot);
+    return vec4<f32>(col * alpha, alpha);
   }
 `;
 
@@ -344,7 +377,9 @@ const BLOOM_V_SHADER = /* wgsl */ `
 `;
 
 const TONEMAP_SHADER = /* wgsl */ `
-  struct TU { vp: vec4<f32> }   // x=W, y=H, z=bloom_intensity, w=_
+  struct TU { vp: vec4<f32>, fx: vec4<f32> }
+  // vp: x=W, y=H, z=bloom_intensity, w=time_seconds
+  // fx: x=vignette (0..1), y=grain (0..1), z=cinematic_mode_flag, w=_
 
   @group(0) @binding(0) var hdr: texture_2d<f32>;
   @group(0) @binding(1) var bloom: texture_2d<f32>;
@@ -353,11 +388,28 @@ const TONEMAP_SHADER = /* wgsl */ `
 
   @vertex
   fn vs(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4<f32> {
-    // Fullscreen triangle (covers viewport with 3 vertices, no buffer needed).
     var pts = array<vec2<f32>, 3>(
       vec2<f32>(-1.0, -1.0), vec2<f32>( 3.0, -1.0), vec2<f32>(-1.0,  3.0),
     );
     return vec4<f32>(pts[vi], 0.0, 1.0);
+  }
+
+  // ACES Filmic curve (Krzysztof Narkowicz's fitted approximation).
+  // Drop-in replacement for Reinhard with much richer highlight rolloff.
+  fn aces(x: vec3<f32>) -> vec3<f32> {
+    let a = vec3<f32>(2.51);
+    let b = vec3<f32>(0.03);
+    let c = vec3<f32>(2.43);
+    let d = vec3<f32>(0.59);
+    let e = vec3<f32>(0.14);
+    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), vec3<f32>(0.0), vec3<f32>(1.0));
+  }
+
+  // 1D hash for grain (no texture sampling needed).
+  fn hash12(p: vec2<f32>) -> f32 {
+    var p3 = fract(vec3<f32>(p.xyx) * 0.1031);
+    p3 = p3 + dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
   }
 
   @fragment
@@ -366,12 +418,28 @@ const TONEMAP_SHADER = /* wgsl */ `
     let raw = textureLoad(hdr, pix, 0).rgb;
     let uv = coord.xy / u.vp.xy;
     let bl = textureSample(bloom, bloomSamp, uv).rgb;
-    let total = raw + bl * u.vp.z;
-    // Extended Reinhard: x / (1 + x) preserves density gradient, never clips.
-    let mapped = total / (vec3<f32>(1.0) + total);
-    // Mild gamma lift so darker regions don't crush.
-    let out = pow(mapped, vec3<f32>(1.0 / 1.4));
-    return vec4<f32>(out, 1.0);
+    var col = raw + bl * u.vp.z;
+
+    // Slight pre-exposure boost — ACES handles highlights well, so we can push.
+    col = col * 1.1;
+
+    // ACES filmic tonemap. Output is in [0,1] gamma-2.2-ish space already.
+    col = aces(col);
+
+    // Vignette: smooth radial falloff. Stronger in cinematic mode.
+    let r = distance(uv, vec2<f32>(0.5)) * 1.4;
+    let vignette_strength = u.fx.x * select(1.0, 1.6, u.fx.z > 0.5);
+    let vignette = mix(1.0, smoothstep(1.05, 0.35, r), clamp(vignette_strength, 0.0, 1.0));
+    col = col * vignette;
+
+    // Film grain: per-pixel hash-based noise, animated by time.
+    let g = hash12(coord.xy + vec2<f32>(u.vp.w * 60.0, u.vp.w * 91.0)) - 0.5;
+    col = col + vec3<f32>(g * u.fx.y);
+
+    // Final gamma lift so deep shadows aren't crushed.
+    col = pow(max(col, vec3<f32>(0.0)), vec3<f32>(1.0 / 1.05));
+
+    return vec4<f32>(col, 1.0);
   }
 `;
 
@@ -542,6 +610,7 @@ const VOLUME_SP_SHADER = /* wgsl */ `
     bbox_max: vec4<f32>,
     fpack:    vec4<f32>,
     ipack:    vec4<u32>,
+    spack:    vec4<f32>,        // matched layout with VOLUME_SHADER
   }
 
   @group(0) @binding(0) var<uniform> u: VolU;
@@ -555,12 +624,24 @@ const VOLUME_SP_SHADER = /* wgsl */ `
     return vec4<f32>(pts[vi], 0.0, 1.0);
   }
 
+  fn slice_cull_sp(p: vec3<f32>) -> bool {
+    let ax = u.ipack.z;
+    if (ax >= 3u) { return false; }
+    let comp = select(select(p.z, p.y, ax == 1u), p.x, ax == 0u);
+    let bmin = select(select(u.bbox_min.z, u.bbox_min.y, ax == 1u), u.bbox_min.x, ax == 0u);
+    let bspn = select(select(u.bbox_max.z - u.bbox_min.z, u.bbox_max.y - u.bbox_min.y, ax == 1u),
+                      u.bbox_max.x - u.bbox_min.x, ax == 0u);
+    let nrm = (comp - bmin) / max(0.0001, bspn);
+    return nrm > u.spack.x;
+  }
+
   fn sample_4ch(p: vec3<f32>) -> vec4<f32> {
     let span = u.bbox_max.xyz - u.bbox_min.xyz;
     let nrm = (p - u.bbox_min.xyz) / span;
     if (nrm.x < 0.0 || nrm.x > 1.0 || nrm.y < 0.0 || nrm.y > 1.0 || nrm.z < 0.0 || nrm.z > 1.0) {
       return vec4<f32>(0.0);
     }
+    if (slice_cull_sp(p)) { return vec4<f32>(0.0); }
     let dim = u.ipack.x;
     let scaled = nrm * f32(dim) - vec3<f32>(0.5);
     let base = clamp(vec3<i32>(floor(scaled)), vec3<i32>(0), vec3<i32>(i32(dim) - 2));
@@ -647,7 +728,8 @@ const VOLUME_SHADER = /* wgsl */ `
     bbox_min: vec4<f32>,
     bbox_max: vec4<f32>,
     fpack:    vec4<f32>,   // viewport.x, viewport.y, density_scale, exposure
-    ipack:    vec4<u32>,   // dim, _, _, _
+    ipack:    vec4<u32>,   // dim, mode (0=density, 1=iso), slice_axis(0..3), _
+    spack:    vec4<f32>,   // slice_pos (0..1), _, _, _
   }
 
   @group(0) @binding(0) var<uniform> u: VolU;
@@ -661,12 +743,25 @@ const VOLUME_SHADER = /* wgsl */ `
     return vec4<f32>(pts[vi], 0.0, 1.0);
   }
 
+  // Slice cutaway test: returns true if this point should be skipped.
+  fn slice_cull(p: vec3<f32>) -> bool {
+    let ax = u.ipack.z;
+    if (ax >= 3u) { return false; }
+    let comp = select(select(p.z, p.y, ax == 1u), p.x, ax == 0u);
+    let bmin = select(select(u.bbox_min.z, u.bbox_min.y, ax == 1u), u.bbox_min.x, ax == 0u);
+    let bspn = select(select(u.bbox_max.z - u.bbox_min.z, u.bbox_max.y - u.bbox_min.y, ax == 1u),
+                      u.bbox_max.x - u.bbox_min.x, ax == 0u);
+    let nrm = (comp - bmin) / max(0.0001, bspn);
+    return nrm > u.spack.x;
+  }
+
   fn sample_density(p: vec3<f32>) -> f32 {
     let span = u.bbox_max.xyz - u.bbox_min.xyz;
     let nrm = (p - u.bbox_min.xyz) / span;
     if (nrm.x < 0.0 || nrm.x > 1.0 || nrm.y < 0.0 || nrm.y > 1.0 || nrm.z < 0.0 || nrm.z > 1.0) {
       return 0.0;
     }
+    if (slice_cull(p)) { return 0.0; }
     let dim = u.ipack.x;
     let scaled = nrm * f32(dim) - vec3<f32>(0.5);
     let base = clamp(vec3<i32>(floor(scaled)), vec3<i32>(0), vec3<i32>(i32(dim) - 2));
@@ -721,19 +816,48 @@ const VOLUME_SHADER = /* wgsl */ `
     var transmittance: f32 = 1.0;
     let density_scale = u.fpack.z;
     let exposure = u.fpack.w;
+    let mode = u.ipack.y;
+
+    // Iso thresholds (raw radicals/voxel, before scale): low / mid / hot shells.
+    let iso0 = 0.6;
+    let iso1 = 1.6;
+    let iso2 = 4.0;
+    var prev_raw: f32 = 0.0;
 
     for (var s: i32 = 0; s < steps; s = s + 1) {
       let p = origin + dir * t;
       let raw = sample_density(p) / 256.0;   // splat scale → radicals/voxel
-      if (raw > 0.0) {
+      if (mode == 1u) {
+        // Iso-surface mode: emit at threshold crossings.
+        if (raw > 0.0) {
+          var shell_em = vec3<f32>(0.0);
+          var shell_a = 0.0;
+          if ((prev_raw < iso0 && raw >= iso0) || (prev_raw >= iso0 && raw < iso0)) {
+            shell_em += vec3<f32>(0.30, 0.55, 1.10) * exposure * 0.7;
+            shell_a += 0.18;
+          }
+          if ((prev_raw < iso1 && raw >= iso1) || (prev_raw >= iso1 && raw < iso1)) {
+            shell_em += vec3<f32>(0.85, 0.80, 1.00) * exposure * 0.95;
+            shell_a += 0.30;
+          }
+          if ((prev_raw < iso2 && raw >= iso2) || (prev_raw >= iso2 && raw < iso2)) {
+            shell_em += vec3<f32>(1.30, 0.80, 0.45) * exposure * 1.2;
+            shell_a += 0.50;
+          }
+          if (shell_a > 0.0) {
+            emission += transmittance * shell_em;
+            transmittance *= 1.0 - shell_a;
+          }
+        }
+        prev_raw = raw;
+      } else if (raw > 0.0) {
         let density = raw * density_scale;
         let absorption = 1.0 - exp(-density * dt);
         // Cool-to-hot ramp on effective radical count per voxel.
-        // raw ≈ 0.3 → cool wisps, raw ≈ 1.5 → pearl, raw ≈ 6+ → amber core.
         let ramp = clamp(log(raw * 4.0 + 1.0) * 0.45, 0.0, 1.0);
-        let cool = vec3<f32>(0.30, 0.55, 1.10);   // electric blue
-        let mid  = vec3<f32>(0.70, 0.80, 1.00);   // pearl
-        let hot  = vec3<f32>(1.20, 0.85, 0.55);   // amber white-hot
+        let cool = vec3<f32>(0.30, 0.55, 1.10);
+        let mid  = vec3<f32>(0.70, 0.80, 1.00);
+        let hot  = vec3<f32>(1.20, 0.85, 0.55);
         var color: vec3<f32>;
         if (ramp < 0.5) {
           color = mix(cool, mid, ramp * 2.0);
@@ -747,6 +871,158 @@ const VOLUME_SHADER = /* wgsl */ `
       t += dt;
     }
     return vec4<f32>(emission, 1.0 - transmittance);
+  }
+`;
+
+// =============================================================================
+// WGSL — TRACK_LINE: a fading polyline through the initial radical positions,
+// sorted by x so the line traces the primary electron's general direction
+// across the box. A `progress` uniform makes it draw on during the cinematic
+// intro (0→1), then sit at full alpha but low opacity afterward.
+// =============================================================================
+
+const TRACK_LINE_SHADER = /* wgsl */ `
+  struct U {
+    view_proj: mat4x4<f32>,
+    pack:      vec4<f32>,    // x = progress (0..1), y = base_alpha
+  }
+
+  @group(0) @binding(0) var<uniform> u: U;
+  @group(0) @binding(1) var<storage, read> pts: array<vec4<f32>>;
+
+  struct VOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) frac: f32,        // 0..1 along the polyline
+    @location(1) revealed: f32,    // 1 if the draw-on cursor has reached this vertex
+  }
+
+  @vertex
+  fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> VOut {
+    let n = arrayLength(&pts);
+    let total_segments = max(1u, n - 1u);
+    let idx = ii + vi;
+    let frac = f32(idx) / f32(total_segments);
+    let p = pts[min(idx, n - 1u)].xyz;
+    var out: VOut;
+    out.clip = u.view_proj * vec4<f32>(p, 1.0);
+    out.frac = frac;
+    out.revealed = select(0.0, 1.0, frac <= u.pack.x);
+    return out;
+  }
+
+  @fragment
+  fn fs(in: VOut) -> @location(0) vec4<f32> {
+    if (in.revealed < 0.5) { discard; }
+    // Bright leading edge, fading tail behind the cursor.
+    let dist_from_head = max(0.0, u.pack.x - in.frac);
+    let head_glow = exp(-dist_from_head * 8.0);
+    let alpha = u.pack.y * (0.35 + 0.65 * head_glow);
+    let col = vec3<f32>(1.10, 0.92, 0.55);    // warm ionization-track white
+    return vec4<f32>(col * alpha, alpha);
+  }
+`;
+
+// =============================================================================
+// WGSL — FADE: copy previous-frame HDR into current target with multiplicative
+// fade, so moving particles leave brief trails. One uniform: fade factor.
+// =============================================================================
+
+const FADE_SHADER = /* wgsl */ `
+  struct U { fade: vec4<f32> }   // fade.x = multiplier in [0,1]
+  @group(0) @binding(0) var src: texture_2d<f32>;
+  @group(0) @binding(1) var<uniform> u: U;
+
+  @vertex
+  fn vs(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4<f32> {
+    var pts = array<vec2<f32>, 3>(
+      vec2<f32>(-1.0, -1.0), vec2<f32>( 3.0, -1.0), vec2<f32>(-1.0,  3.0),
+    );
+    return vec4<f32>(pts[vi], 0.0, 1.0);
+  }
+
+  @fragment
+  fn fs(@builtin(position) coord: vec4<f32>) -> @location(0) vec4<f32> {
+    let c = textureLoad(src, vec2<i32>(coord.xy), 0);
+    return vec4<f32>(c.rgb * u.fade.x, c.a * u.fade.x);
+  }
+`;
+
+// =============================================================================
+// WGSL — SPARK: reaction events. Each spark is a position + birth time;
+// renders as an expanding cyan ring that fades over one checkpoint interval.
+// =============================================================================
+
+const SPARK_SHADER = /* wgsl */ `
+  struct U {
+    view_proj: mat4x4<f32>,
+    pack:      vec4<f32>,    // x = current state.t, y = lifetime (in t-units), z = base_size_nm, w = unused
+    slice:     vec4<f32>,    // x = axis (cast to int), y = pos (0..1), z = bbox_span_axis, w = bbox_min_axis
+  }
+
+  @group(0) @binding(0) var<uniform> u: U;
+  @group(0) @binding(1) var<storage, read> sparks: array<vec4<f32>>;   // xyz + birth_t
+
+  struct VOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    @location(1) age: f32,
+  }
+
+  const QUAD = array<vec2<f32>, 6>(
+    vec2<f32>(-1.0, -1.0), vec2<f32>( 1.0, -1.0), vec2<f32>(-1.0,  1.0),
+    vec2<f32>(-1.0,  1.0), vec2<f32>( 1.0, -1.0), vec2<f32>( 1.0,  1.0),
+  );
+
+  @vertex
+  fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> VOut {
+    let s   = sparks[ii];
+    let pos = s.xyz;
+    let bt  = s.w;
+    let age = (u.pack.x - bt) / max(0.0001, u.pack.y);
+
+    var out: VOut;
+    if (age < 0.0 || age > 1.0) {
+      // Outside lifetime — collapse vertex to clip-space null so it discards.
+      out.clip = vec4<f32>(2.0, 2.0, 2.0, 1.0);
+      out.uv = vec2<f32>(0.0, 0.0);
+      out.age = 1.0;
+      return out;
+    }
+
+    // Optional slice cutaway.
+    let ax = i32(u.slice.x);
+    if (ax >= 0 && ax <= 2) {
+      let comp = select(select(pos.z, pos.y, ax == 1), pos.x, ax == 0);
+      let nrm  = (comp - u.slice.w) / max(0.0001, u.slice.z);
+      if (nrm > u.slice.y) {
+        out.clip = vec4<f32>(2.0, 2.0, 2.0, 1.0);
+        out.uv = vec2<f32>(0.0, 0.0);
+        out.age = 1.0;
+        return out;
+      }
+    }
+
+    let q = QUAD[vi];
+    let center = u.view_proj * vec4<f32>(pos, 1.0);
+    // Ring grows over its lifetime — sonar-ping look.
+    let size = u.pack.z * (0.4 + age * 1.6);
+    out.clip = vec4<f32>(center.xy + q * size * center.w, center.z, center.w);
+    out.uv = q;
+    out.age = age;
+    return out;
+  }
+
+  @fragment
+  fn fs(in: VOut) -> @location(0) vec4<f32> {
+    let r = length(in.uv);
+    // Discard outside the disc AND the inner empty hole — saves ~50 % of fragments.
+    if (r > 1.0 || r < 0.42) { discard; }
+    // Hollow ring: peak at r ≈ 0.72, falls off both sides.
+    let ring = exp(-pow((r - 0.72) * 4.5, 2.0));
+    let lifeFade = 1.0 - in.age;
+    let alpha = ring * lifeFade * 0.85;
+    let col = vec3<f32>(0.45, 0.95, 1.20);
+    return vec4<f32>(col * alpha, alpha);
   }
 `;
 
@@ -876,6 +1152,26 @@ const canvas = document.getElementById('c') as HTMLCanvasElement;
 const fileInput = document.getElementById('file') as HTMLInputElement;
 const slider = document.getElementById('t-slider') as HTMLInputElement;
 const tLabel = document.getElementById('t-label') as HTMLSpanElement;
+const hudTimeEl = document.getElementById('hud-time') as HTMLDivElement | null;
+const hudCapEl = document.getElementById('hud-cap') as HTMLDivElement | null;
+const hudFpsEl = document.getElementById('hud-fps') as HTMLDivElement | null;
+
+// FPS accumulator — averages over a 1-second window, updates the badge once
+// per second. Color-codes green / yellow / red so users can see in real time
+// when an effect is too costly for their GPU.
+let fpsAccumMs = 0;
+let fpsFrames = 0;
+function updateFpsHud(dtMs: number): void {
+  if (!hudFpsEl) return;
+  fpsAccumMs += dtMs;
+  fpsFrames++;
+  if (fpsAccumMs < 1000) return;
+  const fps = (fpsFrames * 1000) / fpsAccumMs;
+  fpsAccumMs = 0;
+  fpsFrames = 0;
+  hudFpsEl.textContent = `${fps.toFixed(0)} fps`;
+  hudFpsEl.className = 'hud-fps ' + (fps >= 50 ? 'ok' : fps >= 28 ? 'warn' : 'bad');
+}
 const metaEl = document.getElementById('meta') as HTMLDivElement;
 const statusEl = document.getElementById('status') as HTMLDivElement;
 const cpsEl = document.getElementById('checkpoints') as HTMLDivElement;
@@ -908,8 +1204,8 @@ const state: {
   bboxMax: [number, number, number];
   /** Volume voxel grid resolution (cube edge). Reallocates buffer on change. */
   voxelDim: number;
-  /** Volume color mode: single density ramp vs per-species RGB blend. */
-  volColor: 'density' | 'species';
+  /** Volume color mode: single density ramp, per-species RGB blend, or iso shells. */
+  volColor: 'density' | 'species' | 'iso';
   /** Optional post-process: HDR bloom (downsample → blur → add). */
   bloom: boolean;
   /** Optional overlay: render rad0 (initial ionization sites) as bright dots. */
@@ -917,6 +1213,29 @@ const state: {
   /** Verification overlay: in volume mode, also draw sprites at low alpha so
    *  misalignments between the two render paths are visually obvious. */
   compareOverlay: boolean;
+  /** Frame-feedback motion-blur trails. When on, each frame's HDR target
+   *  starts as the previous frame's contents multiplied by trailFade. */
+  trails: boolean;
+  /** Render reaction-event sparks (cyan rings where radicals reacted). */
+  showSparks: boolean;
+  /** Render DNA fiber hit pulses (fibers brighten when radicals are near). */
+  showHits: boolean;
+  /** Slice-plane cutaway. axis: 0=X, 1=Y, 2=Z, 3=off. pos in [0,1] (fraction of bbox span). */
+  sliceAxis: 0 | 1 | 2 | 3;
+  slicePos: number;
+  /** Cinematic-mode toggle: hides the panel, ramps up bloom/trails/sparks/hits. */
+  cinematic: boolean;
+  /** Snapshot of pre-cinematic state, so toggling C key restores prior settings. */
+  cinematicStash: null | {
+    bloom: boolean;
+    trails: boolean;
+    showSparks: boolean;
+    showHits: boolean;
+    playing: boolean;
+    playSpeed: number;
+  };
+  /** Cinematic intro: slow dolly from far → home over `duration` ms after blob load. */
+  intro: null | { startMs: number; duration: number; fromYaw: number; fromPitch: number; fromRadius: number; toYaw: number; toPitch: number; toRadius: number };
 } = {
   blob: null,
   t: 0,
@@ -935,9 +1254,89 @@ const state: {
   bloom: false,
   showTracks: false,
   compareOverlay: false,
+  trails: false,
+  showSparks: false,
+  showHits: true,
+  sliceAxis: 3,
+  slicePos: 1.0,
+  cinematic: false,
+  cinematicStash: null,
+  intro: null,
 };
 
-const markInteraction = (): void => { state.lastInteractionMs = performance.now(); };
+/** Wall-clock origin used by tonemap-shader grain. Set once at module init. */
+const bootTimeMs = performance.now();
+
+const markInteraction = (): void => {
+  state.lastInteractionMs = performance.now();
+  // First user input cancels the cinematic intro so they're not fighting an animation.
+  if (state.intro) state.intro = null;
+};
+
+/** Toggle cinematic mode: hide UI, bloom/trails/sparks/hits on, slow auto-play.
+ *  Stash prior values on enter, restore on exit. */
+function setCinematic(on: boolean): void {
+  if (on === state.cinematic) return;
+  state.cinematic = on;
+  if (on) {
+    state.cinematicStash = {
+      bloom: state.bloom,
+      trails: state.trails,
+      showSparks: state.showSparks,
+      showHits: state.showHits,
+      playing: state.playing,
+      playSpeed: state.playSpeed,
+    };
+    state.bloom = true;
+    state.trails = true;
+    state.showSparks = true;
+    state.showHits = true;
+    state.playing = true;
+    state.playSpeed = 0.4;
+    // Reflect on UI controls so they show the truth.
+    if (bloomCb) bloomCb.checked = true;
+    if (trailsCb) trailsCb.checked = true;
+    if (sparksCb) sparksCb.checked = true;
+    if (hitsCb) hitsCb.checked = true;
+    if (playBtn) playBtn.textContent = '⏸ pause';
+    if (speedInput) speedInput.value = '0.4';
+    document.body.classList.add('cinematic');
+    setStatus('Cinematic mode — press C again to exit.');
+  } else {
+    const s = state.cinematicStash;
+    if (s) {
+      state.bloom = s.bloom;
+      state.trails = s.trails;
+      state.showSparks = s.showSparks;
+      state.showHits = s.showHits;
+      state.playing = s.playing;
+      state.playSpeed = s.playSpeed;
+      if (bloomCb) bloomCb.checked = s.bloom;
+      if (trailsCb) trailsCb.checked = s.trails;
+      if (sparksCb) sparksCb.checked = s.showSparks;
+      if (hitsCb) hitsCb.checked = s.showHits;
+      if (playBtn) playBtn.textContent = s.playing ? '⏸ pause' : '▶ play';
+      if (speedInput) speedInput.value = String(s.playSpeed);
+    }
+    state.cinematicStash = null;
+    document.body.classList.remove('cinematic');
+    setStatus('Exited cinematic mode.');
+  }
+}
+
+/** Start a 3s cinematic intro: dolly in from far + offset yaw to the home pose. */
+function startIntro(): void {
+  state.intro = {
+    startMs: performance.now(),
+    duration: 3000,
+    fromYaw: state.cam.yaw - 1.0,
+    fromPitch: state.cam.pitch + 0.18,
+    fromRadius: state.cam.radius * 2.4,
+    toYaw: state.cam.yaw,
+    toPitch: state.cam.pitch,
+    toRadius: state.cam.radius,
+  };
+}
 
 const setStatus = (msg: string, err = false): void => {
   statusEl.textContent = msg;
@@ -1007,19 +1406,63 @@ let clearSpBG: GPUBindGroup | null = null;
 let splatSpBGs: GPUBindGroup[] = [];
 let volSpBG: GPUBindGroup | null = null;
 
+// Trails — frame-feedback HDR texture + fade pipeline.
+let hdrFeedbackTex: GPUTexture | null = null;
+let hdrFeedbackView: GPUTextureView | null = null;
+let fadePipe: GPURenderPipeline | null = null;
+let fadeUniBuf: GPUBuffer | null = null;
+let fadeBG: GPUBindGroup | null = null;
+let prevFrameValid = false;
+
+// Reaction-event sparks (computed on snapshot load).
+let sparkPipe: GPURenderPipeline | null = null;
+let sparkBuf: GPUBuffer | null = null;
+let sparkUniBuf: GPUBuffer | null = null;
+let sparkBG: GPUBindGroup | null = null;
+let nSparks = 0;
+const SPARK_LIFETIME = 0.9;     // in state.t units (one checkpoint interval ≈ 1 unit)
+
+// DNA per-fiber hit intensities (computed on snapshot load).
+let hitBufs: GPUBuffer[] = [];
+let lineBindGroups: GPUBindGroup[] = [];   // one per snapshot pair
+
+// Animated electron-track line — initial rad_buf positions sorted by x.
+let trackLinePipe: GPURenderPipeline | null = null;
+let trackLineUniBuf: GPUBuffer | null = null;
+let trackLinePosBuf: GPUBuffer | null = null;
+let trackLineBG: GPUBindGroup | null = null;
+let nTrackLinePts = 0;
+
 function ensureHdrTarget(w: number, h: number): void {
-  if (!device || !tonemapPipe || !bloomHPipe || !bloomVPipe || !bloomSampler || !tonemapUniBuf) return;
+  if (!device || !tonemapPipe || !bloomHPipe || !bloomVPipe || !bloomSampler || !tonemapUniBuf || !fadePipe || !fadeUniBuf) return;
   if (hdrTex && hdrSize.w === w && hdrSize.h === h) return;
   hdrTex?.destroy();
+  hdrFeedbackTex?.destroy();
   bloomTexA?.destroy();
   bloomTexB?.destroy();
+  prevFrameValid = false;
 
   hdrTex = device.createTexture({
     size: { width: w, height: h, depthOrArrayLayers: 1 },
     format: HDR_FORMAT,
-    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
   });
   hdrView = hdrTex.createView();
+
+  // Frame-feedback texture — destination of copy at end of frame, source for FADE_SHADER at start.
+  hdrFeedbackTex = device.createTexture({
+    size: { width: w, height: h, depthOrArrayLayers: 1 },
+    format: HDR_FORMAT,
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  });
+  hdrFeedbackView = hdrFeedbackTex.createView();
+  fadeBG = device.createBindGroup({
+    layout: fadePipe.getBindGroupLayout(0),
+    entries: [
+      { binding: 0, resource: hdrFeedbackView },
+      { binding: 1, resource: { buffer: fadeUniBuf } },
+    ],
+  });
 
   // Half-resolution bloom buffers (clamped to >= 1).
   const bw = Math.max(1, Math.floor(w / 2));
@@ -1112,7 +1555,64 @@ async function initGPU(): Promise<boolean> {
     addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge',
   });
   tonemapUniBuf = device.createBuffer({
+    size: 32,                                         // 2 × vec4<f32> (vp + fx)
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+
+  // Trails — fade-from-feedback fullscreen pass.
+  const fadeMod = device.createShaderModule({ code: FADE_SHADER });
+  fadePipe = device.createRenderPipeline({
+    layout: 'auto',
+    vertex: { module: fadeMod, entryPoint: 'vs' },
+    fragment: { module: fadeMod, entryPoint: 'fs', targets: [{ format: HDR_FORMAT }] },
+    primitive: { topology: 'triangle-list' },
+  });
+  fadeUniBuf = device.createBuffer({
     size: 16,                                         // vec4<f32>
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+
+  // Animated electron-track line.
+  const trackLineMod = device.createShaderModule({ code: TRACK_LINE_SHADER });
+  trackLinePipe = device.createRenderPipeline({
+    layout: 'auto',
+    vertex: { module: trackLineMod, entryPoint: 'vs' },
+    fragment: {
+      module: trackLineMod, entryPoint: 'fs',
+      targets: [{
+        format: HDR_FORMAT,
+        blend: {
+          color: { srcFactor: 'one', dstFactor: 'one', operation: 'add' },
+          alpha: { srcFactor: 'one', dstFactor: 'one', operation: 'add' },
+        },
+      }],
+    },
+    primitive: { topology: 'line-list' },
+  });
+  trackLineUniBuf = device.createBuffer({
+    size: 64 + 16,                                    // mat4 + pack
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+
+  // Reaction sparks — instanced ring sprites.
+  const sparkMod = device.createShaderModule({ code: SPARK_SHADER });
+  sparkPipe = device.createRenderPipeline({
+    layout: 'auto',
+    vertex: { module: sparkMod, entryPoint: 'vs' },
+    fragment: {
+      module: sparkMod, entryPoint: 'fs',
+      targets: [{
+        format: HDR_FORMAT,
+        blend: {
+          color: { srcFactor: 'one', dstFactor: 'one', operation: 'add' },
+          alpha: { srcFactor: 'one', dstFactor: 'one', operation: 'add' },
+        },
+      }],
+    },
+    primitive: { topology: 'triangle-list' },
+  });
+  sparkUniBuf = device.createBuffer({
+    size: 64 + 16 + 16,                               // mat4 + pack + slice
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
 
@@ -1151,7 +1651,7 @@ async function initGPU(): Promise<boolean> {
   });
 
   uniformBuf = device.createBuffer({
-    size: 64 + 16 + 16 + 16, // mat4 + species_scale + scalar pack + extras vec4
+    size: 64 + 16 + 16 + 16 + 16 + 16, // mat4 + species_scale + pack + extras + bbox_min + bbox_span
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
 
@@ -1173,7 +1673,7 @@ async function initGPU(): Promise<boolean> {
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
   volUniBuf = device.createBuffer({
-    size: 64 + 16 + 16 + 16 + 16 + 16,                  // mat4 + 5 vec4 = 144
+    size: 64 + 16 + 16 + 16 + 16 + 16 + 16,             // mat4 + 6 vec4 = 160
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
 
@@ -1266,6 +1766,161 @@ async function initGPU(): Promise<boolean> {
   return true;
 }
 
+/** Per-fiber hit intensity at each snapshot. fiber-hit count, normalized to ~[0,1].
+ *  Cheap O(snap_n × neighbour-fibers) thanks to the regular 21×21 fiber grid:
+ *  for each radical, look up only the 4 fibers nearest in (Y,Z), check distance to
+ *  the segment, brute-force is fine. ~20 ms total at snap_n = 50K, n_fibers = 441. */
+function computeFiberHits(blob: Blob4D): Float32Array[] {
+  const fy = blob.dna.fy, fz = blob.dna.fz;
+  const nF = blob.dna.n_fibers;
+  const x0 = blob.dna.x0, xL = blob.dna.x0 + blob.dna.L_nm;
+  const R = 5.0;             // hit radius nm — generous enough to register OH-fiber proximity
+  const R2 = R * R;
+  const hits: Float32Array[] = [];
+
+  // 2D bin index over (fy, fz) with bin width = ~ fiber spacing, so we look up 4 nearest fibers per radical.
+  let yMin = Infinity, yMax = -Infinity, zMin = Infinity, zMax = -Infinity;
+  for (let i = 0; i < nF; i++) {
+    if (fy[i] < yMin) yMin = fy[i]; if (fy[i] > yMax) yMax = fy[i];
+    if (fz[i] < zMin) zMin = fz[i]; if (fz[i] > zMax) zMax = fz[i];
+  }
+  const binN = 24;
+  const yStep = (yMax - yMin) / binN || 1;
+  const zStep = (zMax - zMin) / binN || 1;
+  const bins: number[][] = new Array(binN * binN).fill(0).map(() => []);
+  for (let i = 0; i < nF; i++) {
+    const yi = Math.max(0, Math.min(binN - 1, Math.floor((fy[i] - yMin) / yStep)));
+    const zi = Math.max(0, Math.min(binN - 1, Math.floor((fz[i] - zMin) / zStep)));
+    bins[yi * binN + zi].push(i);
+  }
+
+  for (const s of blob.snapshots) {
+    const h = new Float32Array(nF);
+    const pos = s.pos, alive = s.alive;
+    for (let i = 0; i < alive.length; i++) {
+      if (!alive[i]) continue;
+      const x = pos[i * 4 + 0], y = pos[i * 4 + 1], z = pos[i * 4 + 2];
+      if (x < x0 || x > xL) continue;
+      const yi = Math.max(0, Math.min(binN - 1, Math.floor((y - yMin) / yStep)));
+      const zi = Math.max(0, Math.min(binN - 1, Math.floor((z - zMin) / zStep)));
+      // check this bin + 8 neighbours (covers 5 nm reach with bin width ≈ 130 nm overshoot)
+      for (let dy = -1; dy <= 1; dy++) {
+        const yy = yi + dy; if (yy < 0 || yy >= binN) continue;
+        for (let dz = -1; dz <= 1; dz++) {
+          const zz = zi + dz; if (zz < 0 || zz >= binN) continue;
+          for (const f of bins[yy * binN + zz]) {
+            const ddy = y - fy[f], ddz = z - fz[f];
+            if (ddy * ddy + ddz * ddz < R2) { h[f] += 1; }
+          }
+        }
+      }
+    }
+    // Normalize: log-scale so a few hits already register, big clusters don't blow out.
+    for (let f = 0; f < nF; f++) h[f] = Math.min(1, Math.log(1 + h[f]) / 3.5);
+    hits.push(h);
+  }
+  return hits;
+}
+
+/** Build reaction-event spark list. For each transition (k, k+1), find every
+ *  radical that flipped alive→dead and emit a spark at its last-known position
+ *  with birth_t = k + 0.5. Subsamples down to MAX_SPARKS to keep the buffer bounded
+ *  AND to avoid blowing fillrate on integrated GPUs. */
+function computeSparks(blob: Blob4D): Float32Array {
+  const MAX_SPARKS = 6000;
+  const events: number[] = [];     // flat (x,y,z,birth_t)*N
+  for (let k = 0; k < blob.snapshots.length - 1; k++) {
+    const a = blob.snapshots[k], b = blob.snapshots[k + 1];
+    const aliveA = a.alive, aliveB = b.alive;
+    const posA = a.pos;
+    const birth = k + 0.5;
+    for (let i = 0; i < aliveA.length; i++) {
+      if (aliveA[i] === 1 && aliveB[i] === 0) {
+        events.push(posA[i * 4], posA[i * 4 + 1], posA[i * 4 + 2], birth);
+      }
+    }
+  }
+  const total = events.length / 4;
+  if (total <= MAX_SPARKS) return new Float32Array(events);
+  // Reservoir-style subsample.
+  const stride = Math.ceil(total / MAX_SPARKS);
+  const out = new Float32Array(MAX_SPARKS * 4);
+  let w = 0;
+  for (let r = 0; r < total; r += stride) {
+    if (w >= MAX_SPARKS) break;
+    out[w * 4 + 0] = events[r * 4 + 0];
+    out[w * 4 + 1] = events[r * 4 + 1];
+    out[w * 4 + 2] = events[r * 4 + 2];
+    out[w * 4 + 3] = events[r * 4 + 3];
+    w++;
+  }
+  return out.subarray(0, w * 4);
+}
+
+/** Sort the initial radical buffer by x and upload as a polyline so the track-
+ *  line shader can connect them. Subsamples down to ≤4096 points to keep the
+ *  line readable (full 50K is a noisy mess). */
+function uploadTrackLine(blob: Blob4D): void {
+  if (!device || !trackLinePipe || !trackLineUniBuf) return;
+  trackLinePosBuf?.destroy();
+  const src = blob.rad0.rad_buf;
+  const n = blob.rad0.rad_n_initial;
+  if (n === 0) { nTrackLinePts = 0; trackLineBG = null; return; }
+  // Build (x,i) array, sort by x, take stride.
+  const idx = new Int32Array(n);
+  for (let i = 0; i < n; i++) idx[i] = i;
+  idx.sort((a, b) => src[a * 4] - src[b * 4]);
+  const TARGET = Math.min(4096, n);
+  const stride = Math.max(1, Math.floor(n / TARGET));
+  const out = new Float32Array(Math.ceil(n / stride) * 4);
+  let w = 0;
+  for (let r = 0; r < n; r += stride) {
+    const i = idx[r];
+    out[w * 4 + 0] = src[i * 4 + 0];
+    out[w * 4 + 1] = src[i * 4 + 1];
+    out[w * 4 + 2] = src[i * 4 + 2];
+    out[w * 4 + 3] = 0;
+    w++;
+  }
+  const pts = out.subarray(0, w * 4);
+  nTrackLinePts = w;
+  trackLinePosBuf = device.createBuffer({
+    size: pts.byteLength,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  });
+  device.queue.writeBuffer(trackLinePosBuf, 0, pts);
+  trackLineBG = device.createBindGroup({
+    layout: trackLinePipe.getBindGroupLayout(0),
+    entries: [
+      { binding: 0, resource: { buffer: trackLineUniBuf } },
+      { binding: 1, resource: { buffer: trackLinePosBuf } },
+    ],
+  });
+}
+
+function uploadSparks(blob: Blob4D): void {
+  if (!device || !sparkPipe || !sparkUniBuf) return;
+  sparkBuf?.destroy();
+  const sparks = computeSparks(blob);
+  nSparks = sparks.length / 4;
+  if (nSparks === 0) {
+    sparkBG = null;
+    return;
+  }
+  sparkBuf = device.createBuffer({
+    size: sparks.byteLength,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  });
+  device.queue.writeBuffer(sparkBuf, 0, sparks);
+  sparkBG = device.createBindGroup({
+    layout: sparkPipe.getBindGroupLayout(0),
+    entries: [
+      { binding: 0, resource: { buffer: sparkUniBuf } },
+      { binding: 1, resource: { buffer: sparkBuf } },
+    ],
+  });
+}
+
 function uploadTracks(blob: Blob4D): void {
   if (!device || !trackPipe || !uniformBuf) return;
   trackPosBuf?.destroy();
@@ -1288,6 +1943,9 @@ function uploadDNA(blob: Blob4D): void {
   if (!device || !linePipe || !uniformBuf) return;
   fyBuf?.destroy();
   fzBuf?.destroy();
+  hitBufs.forEach((b) => b.destroy());
+  hitBufs = [];
+  lineBindGroups = [];
   fyBuf = device.createBuffer({
     size: blob.dna.fy.byteLength,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
@@ -1298,15 +1956,35 @@ function uploadDNA(blob: Blob4D): void {
   });
   device.queue.writeBuffer(fyBuf, 0, blob.dna.fy);
   device.queue.writeBuffer(fzBuf, 0, blob.dna.fz);
-  lineBindGroup = device.createBindGroup({
-    layout: linePipe.getBindGroupLayout(0),
-    entries: [
-      { binding: 0, resource: { buffer: uniformBuf } },
-      { binding: 1, resource: { buffer: fyBuf } },
-      { binding: 2, resource: { buffer: fzBuf } },
-    ],
-  });
   nFibers = blob.dna.n_fibers;
+
+  // Per-snapshot hit intensities. Allocate one storage buffer per snapshot,
+  // then a line bind group per (k, k+1) pair so the shader can lerp between them.
+  const hitMatrix = computeFiberHits(blob);
+  for (const h of hitMatrix) {
+    const buf = device.createBuffer({
+      size: h.byteLength,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    device.queue.writeBuffer(buf, 0, h);
+    hitBufs.push(buf);
+  }
+  const N = hitBufs.length;
+  for (let k = 0; k < N; k++) {
+    const a = k, b = Math.min(k + 1, N - 1);
+    lineBindGroups.push(device.createBindGroup({
+      layout: linePipe.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: uniformBuf } },
+        { binding: 1, resource: { buffer: fyBuf } },
+        { binding: 2, resource: { buffer: fzBuf } },
+        { binding: 3, resource: { buffer: hitBufs[a] } },
+        { binding: 4, resource: { buffer: hitBufs[b] } },
+      ],
+    }));
+  }
+  // Keep lineBindGroup as the first pair so any stale references render the t=0 view.
+  lineBindGroup = lineBindGroups[0] ?? null;
 }
 
 function uploadSnapshots(blob: Blob4D): void {
@@ -1395,8 +2073,10 @@ function frame(): void {
   }
 
   const now = performance.now();
-  const dt = Math.min(0.1, (now - lastFrameMs) / 1000);
+  const dtMs = now - lastFrameMs;
+  const dt = Math.min(0.1, dtMs / 1000);
   lastFrameMs = now;
+  updateFpsHud(dtMs);
 
   // --- Auto-play: advance state.t at playSpeed checkpoints/sec, loop at end.
   if (state.playing) {
@@ -1406,9 +2086,26 @@ function frame(): void {
     setT(state.t);
   }
 
+  // --- HUD opacity: bright while playing or in cinematic, dim when paused.
+  if (hudTimeEl) hudTimeEl.classList.toggle('show', state.playing || state.cinematic);
+  if (hudCapEl) hudCapEl.classList.toggle('show', state.playing || state.cinematic);
+
+  // --- Cinematic intro: dolly cam from far→home with smoothstep ease.
+  if (state.intro) {
+    const u = Math.min(1, (now - state.intro.startMs) / state.intro.duration);
+    const e = u * u * (3 - 2 * u);                      // smoothstep
+    state.cam.yaw    = state.intro.fromYaw    + (state.intro.toYaw    - state.intro.fromYaw)    * e;
+    state.cam.pitch  = state.intro.fromPitch  + (state.intro.toPitch  - state.intro.fromPitch)  * e;
+    state.cam.radius = state.intro.fromRadius + (state.intro.toRadius - state.intro.fromRadius) * e;
+    if (u >= 1) state.intro = null;
+    state.lastInteractionMs = now;                       // suppress auto-orbit during intro
+  }
+
   // --- Auto-orbit: gentle yaw drift if idle for >3s and no drag.
-  if (!state.drag.active && now - state.lastInteractionMs > 3000) {
-    state.cam.yaw += 0.08 * dt;
+  if (!state.drag.active && !state.intro && now - state.lastInteractionMs > 3000) {
+    // Slower drift in cinematic mode for a more deliberate camera feel.
+    const rate = state.cinematic ? 0.05 : 0.08;
+    state.cam.yaw += rate * dt;
   }
 
   const dpr = window.devicePixelRatio || 1;
@@ -1421,7 +2118,7 @@ function frame(): void {
 
   const aspect = w / h;
   const vp = viewProj(state.cam, aspect);
-  const uniData = new Float32Array(28);
+  const uniData = new Float32Array(36);
   uniData.set(vp, 0);
   // species_scale: OH/eaq/H/H3O+ — eaq diffuses fastest so render slightly larger.
   uniData[16] = 1.0; uniData[17] = 1.4; uniData[18] = 1.2; uniData[19] = 1.0;
@@ -1437,9 +2134,17 @@ function frame(): void {
   uniU32[21] = state.speciesMask;               // species_mask
   uniData[22] = state.blob.dna.x0;              // dna_x0
   uniData[23] = state.blob.dna.L_nm;            // dna_L
-  // extras.x: sprite intensity. Sprite-only mode = 1.0; volume-with-compare = 0.4.
+  // extras: x=sprite intensity, y=hit gain (global), z=slice axis (cast int), w=slice pos.
   uniData[24] = (state.viewMode === 'sprites') ? 1.0 : (state.compareOverlay ? 0.4 : 0.0);
-  uniData[25] = 0; uniData[26] = 0; uniData[27] = 0;
+  uniData[25] = state.showHits ? 1.0 : 0.0;
+  uniData[26] = state.sliceAxis;
+  uniData[27] = state.slicePos;
+  // bbox_min (vec4) + bbox_span (vec4) — for slice computations.
+  uniData[28] = state.bboxMin[0]; uniData[29] = state.bboxMin[1]; uniData[30] = state.bboxMin[2]; uniData[31] = 0;
+  uniData[32] = state.bboxMax[0] - state.bboxMin[0];
+  uniData[33] = state.bboxMax[1] - state.bboxMin[1];
+  uniData[34] = state.bboxMax[2] - state.bboxMin[2];
+  uniData[35] = 0;
   device.queue.writeBuffer(uniformBuf, 0, uniData);
 
   ensureHdrTarget(w, h);
@@ -1506,10 +2211,10 @@ function frame(): void {
     cp.dispatchWorkgroups(splatDisp.x, splatDisp.y);
     cp.end();
 
-    // Volume render uniforms (inv_vp + cam_eye + bbox + fpack + ipack).
+    // Volume render uniforms (inv_vp + cam_eye + bbox + fpack + ipack + spack).
     const inv_vp = inverse4(vp);
     const eye = cameraEye(state.cam);
-    const vUni = new ArrayBuffer(144);
+    const vUni = new ArrayBuffer(160);
     const vF = new Float32Array(vUni);
     const vU = new Uint32Array(vUni);
     vF.set(inv_vp, 0);
@@ -1522,7 +2227,30 @@ function frame(): void {
     vF[30] = 0.06 * dimScale * dimScale;
     vF[31] = 1.1;     // exposure
     vU[32] = dim;
+    vU[33] = state.volColor === 'iso' ? 1 : 0;          // ipack.y mode
+    vU[34] = state.sliceAxis;                            // ipack.z slice_axis
+    vU[35] = 0;
+    vF[36] = state.slicePos;                             // spack.x slice_pos
+    vF[37] = 0; vF[38] = 0; vF[39] = 0;
     device.queue.writeBuffer(volUniBuf, 0, vUni);
+  }
+
+  // ---- Trails: fade-and-copy previous frame into hdrTex (separate pass so we
+  // can sample hdrFeedbackView; you can't sample what you're rendering to). ----
+  const trailsActive = state.trails && fadePipe && fadeBG && fadeUniBuf && prevFrameValid;
+  if (trailsActive) {
+    device.queue.writeBuffer(fadeUniBuf!, 0, new Float32Array([0.86, 0, 0, 0]));
+    const fp = enc.beginRenderPass({
+      colorAttachments: [{
+        view: hdrView,
+        clearValue: { r: 0, g: 0, b: 0, a: 1 },
+        loadOp: 'clear', storeOp: 'store',
+      }],
+    });
+    fp.setPipeline(fadePipe!);
+    fp.setBindGroup(0, fadeBG!);
+    fp.draw(3, 1, 0, 0);
+    fp.end();
   }
 
   // ---- HDR pass: DNA grid + (sprites OR volume) ----
@@ -1530,14 +2258,41 @@ function frame(): void {
     colorAttachments: [{
       view: hdrView,
       clearValue: { r: 0, g: 0, b: 0, a: 1 },
-      loadOp: 'clear', storeOp: 'store',
+      loadOp: trailsActive ? 'load' : 'clear', storeOp: 'store',
     }],
   });
   // DNA fiber lines first — they're a static reference grid.
-  if (linePipe && lineBindGroup && nFibers > 0) {
+  // Pick the line bind group matching the current snapshot pair so hit pulses lerp correctly.
+  const linePairBG = lineBindGroups[Math.min(k, lineBindGroups.length - 1)] ?? lineBindGroup;
+  if (linePipe && linePairBG && nFibers > 0) {
     hdrPass.setPipeline(linePipe);
-    hdrPass.setBindGroup(0, lineBindGroup);
+    hdrPass.setBindGroup(0, linePairBG);
     hdrPass.draw(2, nFibers, 0, 0);
+  }
+
+  // Animated electron-track line — draws on during cinematic intro, then sits
+  // at low alpha behind the cloud so the path is always visible.
+  if (trackLinePipe && trackLineBG && trackLineUniBuf && nTrackLinePts > 1) {
+    let progress = 1.0;
+    let baseAlpha = 0.18;
+    if (state.intro) {
+      const u = Math.min(1, (now - state.intro.startMs) / state.intro.duration);
+      // Track line draws on during the first 80% of the intro so it lands before settling.
+      progress = Math.min(1, u / 0.8);
+      baseAlpha = 0.55;     // brighter while drawing on
+    }
+    const tlUni = new ArrayBuffer(80);
+    const tlF = new Float32Array(tlUni);
+    tlF.set(vp, 0);
+    tlF[16] = progress;
+    tlF[17] = baseAlpha;
+    tlF[18] = 0; tlF[19] = 0;
+    device.queue.writeBuffer(trackLineUniBuf, 0, tlUni);
+    hdrPass.setPipeline(trackLinePipe);
+    hdrPass.setBindGroup(0, trackLineBG);
+    // line-list: each segment = 2 vertices, instanced once per segment.
+    const segments = nTrackLinePts - 1;
+    hdrPass.draw(2, segments, 0, 0);
   }
 
   // Track footprint overlay — render before main view so cloud/sprites can
@@ -1570,6 +2325,36 @@ function frame(): void {
     hdrPass.setBindGroup(0, bindGroups[k]);
     hdrPass.draw(6, state.blob.snap_n, 0, 0);
   }
+
+  // Reaction-event sparks — drawn on top of sprites/volume.
+  if (state.showSparks && sparkPipe && sparkBG && sparkUniBuf && nSparks > 0) {
+    // Tune base ring size to scene scale: ~3% of bbox span feels right.
+    const span = Math.max(
+      state.bboxMax[0] - state.bboxMin[0],
+      state.bboxMax[1] - state.bboxMin[1],
+      state.bboxMax[2] - state.bboxMin[2],
+    );
+    const baseSize = Math.max(0.5, span * 0.012);
+    const ax = state.sliceAxis;
+    const bmin = ax === 0 ? state.bboxMin[0] : ax === 1 ? state.bboxMin[1] : ax === 2 ? state.bboxMin[2] : 0;
+    const bspan = ax === 0 ? state.bboxMax[0] - state.bboxMin[0]
+                : ax === 1 ? state.bboxMax[1] - state.bboxMin[1]
+                : ax === 2 ? state.bboxMax[2] - state.bboxMin[2] : 1;
+    const sUni = new ArrayBuffer(96);
+    const sF = new Float32Array(sUni);
+    sF.set(vp, 0);
+    sF[16] = state.t;
+    sF[17] = SPARK_LIFETIME;
+    sF[18] = baseSize;
+    sF[19] = 0;
+    sF[20] = ax; sF[21] = state.slicePos; sF[22] = bspan; sF[23] = bmin;
+    device.queue.writeBuffer(sparkUniBuf, 0, sUni);
+
+    hdrPass.setPipeline(sparkPipe);
+    hdrPass.setBindGroup(0, sparkBG);
+    hdrPass.draw(6, nSparks, 0, 0);
+  }
+
   hdrPass.end();
 
   // Pass 2a — Bloom (only when enabled). Two-pass separable Gaussian on a
@@ -1603,9 +2388,16 @@ function frame(): void {
     vPass.end();
   }
 
-  // Tonemap uniform: (W, H, bloom_intensity, _).
+  // Tonemap uniform: vp (W, H, bloom_intensity, time_s) + fx (vignette, grain, cinematic_flag, _).
   if (tonemapUniBuf) {
-    const tu = new Float32Array([w, h, state.bloom ? 1.0 : 0.0, 0]);
+    const t_s = (now - bootTimeMs) / 1000;
+    const tu = new Float32Array([
+      w, h, state.bloom ? 1.0 : 0.0, t_s,
+      state.cinematic ? 0.55 : 0.30,           // vignette strength
+      state.cinematic ? 0.045 : 0.025,          // grain
+      state.cinematic ? 1.0 : 0.0,              // cinematic flag
+      0,
+    ]);
     device.queue.writeBuffer(tonemapUniBuf, 0, tu);
   }
 
@@ -1622,6 +2414,18 @@ function frame(): void {
   tmPass.setBindGroup(0, tonemapBG);
   tmPass.draw(3, 1, 0, 0);
   tmPass.end();
+
+  // Copy current HDR into feedback texture so next frame's fade pass can sample it.
+  if (state.trails && hdrTex && hdrFeedbackTex) {
+    enc.copyTextureToTexture(
+      { texture: hdrTex },
+      { texture: hdrFeedbackTex },
+      { width: hdrSize.w, height: hdrSize.h, depthOrArrayLayers: 1 },
+    );
+    prevFrameValid = true;
+  } else {
+    prevFrameValid = false;
+  }
 
   device.queue.submit([enc.finish()]);
 
@@ -1763,6 +2567,7 @@ function setT(t: number): void {
   const alive_count = Math.round(aliveCounts[k] * (1 - u) + aliveCounts[k + 1] * u);
 
   tLabel.textContent = fmtTime(t_ns);
+  if (hudTimeEl) hudTimeEl.textContent = fmtTime(t_ns);
   const okColor = validationStatus === 'OK' ? '#3acf6a' : '#ff6090';
   const detailsHTML = validationDetails.length
     ? `<details style="margin-top:4px;border-top:none;padding-top:0"><summary style="font-size:9px;letter-spacing:0.08em">round-trip detail</summary><div style="margin-top:4px;font-size:10px;line-height:1.55;color:#8a8a9a">${validationDetails.map(d => `<div>${d}</div>`).join('')}</div></details>`
@@ -1850,6 +2655,8 @@ async function loadFile(f: File): Promise<void> {
     uploadSnapshots(blob);
     uploadDNA(blob);
     uploadTracks(blob);
+    uploadSparks(blob);
+    uploadTrackLine(blob);
 
     // Compute scene bbox using the most-diffused snapshot (radicals at their
     // widest spread). Volume mode + camera framing both key off this.
@@ -1895,6 +2702,7 @@ async function loadFile(f: File): Promise<void> {
     slider.step = '0.02';
     rebuildCheckpointButtons();
     setT(0);
+    startIntro();
     setStatus(`Loaded ${blob.num_snaps} checkpoints, ${blob.snap_n.toLocaleString()} radicals each.`);
   } catch (e) {
     setStatus(`Parse error: ${e instanceof Error ? e.message : String(e)}`, true);
@@ -2010,7 +2818,8 @@ volQualitySel?.addEventListener('change', () => {
 });
 
 volColorSel?.addEventListener('change', () => {
-  state.volColor = volColorSel.value === 'species' ? 'species' : 'density';
+  const v = volColorSel.value;
+  state.volColor = v === 'species' ? 'species' : v === 'iso' ? 'iso' : 'density';
   markInteraction();
 });
 
@@ -2027,6 +2836,40 @@ tracksCb?.addEventListener('change', () => {
 const compareCb = document.getElementById('compare') as HTMLInputElement | null;
 compareCb?.addEventListener('change', () => {
   state.compareOverlay = !!compareCb.checked;
+  markInteraction();
+});
+
+const trailsCb = document.getElementById('trails') as HTMLInputElement | null;
+trailsCb?.addEventListener('change', () => {
+  state.trails = !!trailsCb.checked;
+  prevFrameValid = false;
+  markInteraction();
+});
+
+const sparksCb = document.getElementById('sparks') as HTMLInputElement | null;
+sparksCb?.addEventListener('change', () => {
+  state.showSparks = !!sparksCb.checked;
+  markInteraction();
+});
+
+const hitsCb = document.getElementById('hits') as HTMLInputElement | null;
+hitsCb?.addEventListener('change', () => {
+  state.showHits = !!hitsCb.checked;
+  markInteraction();
+});
+
+const sliceAxisSel = document.getElementById('slice-axis') as HTMLSelectElement | null;
+const slicePosInput = document.getElementById('slice-pos') as HTMLInputElement | null;
+const sliceLabel = document.getElementById('slice-label') as HTMLSpanElement | null;
+sliceAxisSel?.addEventListener('change', () => {
+  const v = parseInt(sliceAxisSel.value, 10);
+  state.sliceAxis = (v >= 0 && v <= 3 ? v : 3) as 0 | 1 | 2 | 3;
+  markInteraction();
+});
+slicePosInput?.addEventListener('input', () => {
+  const v = parseFloat(slicePosInput.value);
+  state.slicePos = Math.max(0, Math.min(1, v / 100));
+  if (sliceLabel) sliceLabel.textContent = `${Math.round(v)}%`;
   markInteraction();
 });
 
@@ -2069,6 +2912,9 @@ window.addEventListener('keydown', (e) => {
     case 'f': case 'F':
       if (document.fullscreenElement) document.exitFullscreen();
       else document.documentElement.requestFullscreen();
+      break;
+    case 'c': case 'C':
+      setCinematic(!state.cinematic);
       break;
   }
 });

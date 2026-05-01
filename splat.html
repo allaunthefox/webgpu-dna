@@ -73,6 +73,45 @@
         font-size: 18px; color: #5a8af0; letter-spacing: 0.1em; z-index: 10;
         pointer-events: none; border: 3px dashed #5a8af0; }
       .drop-overlay.active { display: flex; }
+
+      /* Big time HUD — fades in during play, dims when paused. */
+      .hud-time {
+        position: fixed; left: 50%; bottom: 32px; transform: translateX(-50%);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: clamp(36px, 6vw, 80px); font-weight: 600; letter-spacing: -0.02em;
+        color: #f0f6ff; text-shadow: 0 0 24px rgba(90, 138, 240, 0.55), 0 0 48px rgba(90, 138, 240, 0.30);
+        pointer-events: none; z-index: 5; opacity: 0; transition: opacity 0.4s ease;
+        white-space: nowrap;
+      }
+      .hud-time.show { opacity: 0.85; }
+      .hud-cap {
+        position: fixed; left: 50%; bottom: clamp(108px, calc(32px + 7vw), 140px);
+        transform: translateX(-50%);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase;
+        color: #5a8af0; pointer-events: none; z-index: 5;
+        opacity: 0; transition: opacity 0.4s ease;
+      }
+      .hud-cap.show { opacity: 0.7; }
+
+      /* FPS readout — corner badge so you can see the cost of toggles. */
+      .hud-fps {
+        position: fixed; top: 12px; right: 14px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 11px; padding: 4px 9px; border-radius: 4px;
+        background: rgba(8,8,14,0.7); border: 1px solid #2a2a3a;
+        color: #5a8af0; z-index: 6; pointer-events: none;
+        backdrop-filter: blur(6px); letter-spacing: 0.02em;
+      }
+      .hud-fps.ok   { color: #5a8af0; border-color: #2a2a3a; }
+      .hud-fps.warn { color: #fa0;    border-color: #553a14; }
+      .hud-fps.bad  { color: #ff6090; border-color: #5a2a3a; }
+
+      /* Cinematic mode: hide everything except the canvas + time HUD. */
+      body.cinematic .panel { display: none; }
+      body.cinematic .hud-fps { display: none; }
+      body.cinematic .hud-time { opacity: 0.92; }
+      body.cinematic .hud-cap { opacity: 0.85; }
     </style>
   </head>
   <body>
@@ -119,18 +158,39 @@
         <select id="vol-color" style="flex:1;background:#1a1a26;color:#c8c8d0;border:1px solid #2a2a3a;border-radius:4px;padding:3px 6px;font-family:inherit;font-size:11px">
           <option value="density">density — cool→hot ramp</option>
           <option value="species">by species — RGB blend</option>
+          <option value="iso">iso-shells — nebula</option>
         </select>
       </div>
       <div class="row tight" style="margin:6px 0 0 0;gap:14px;flex-wrap:wrap">
-        <label style="font-size:10px;color:#b0b0c0;display:flex;align-items:center;gap:4px;cursor:pointer">
-          <input type="checkbox" id="bloom" style="accent-color:#5a8af0;width:11px;height:11px;margin:0" /> bloom
+        <label style="font-size:10px;color:#b0b0c0;display:flex;align-items:center;gap:4px;cursor:pointer" title="Two-pass separable Gaussian blur. Adds ~1.5 ms on integrated GPUs.">
+          <input type="checkbox" id="bloom" style="accent-color:#5a8af0;width:11px;height:11px;margin:0" /> bloom <span style="color:#fa0;font-size:9px;letter-spacing:0.06em">med</span>
         </label>
         <label style="font-size:10px;color:#b0b0c0;display:flex;align-items:center;gap:4px;cursor:pointer">
           <input type="checkbox" id="tracks" style="accent-color:#5a8af0;width:11px;height:11px;margin:0" /> track footprint
         </label>
+        <label style="font-size:10px;color:#b0b0c0;display:flex;align-items:center;gap:4px;cursor:pointer" title="Motion-blur trails: each frame's HDR target starts as the previous frame faded. Adds an extra fullscreen pass + texture copy.">
+          <input type="checkbox" id="trails" style="accent-color:#5a8af0;width:11px;height:11px;margin:0" /> trails <span style="color:#fa0;font-size:9px;letter-spacing:0.06em">heavy</span>
+        </label>
+        <label style="font-size:10px;color:#b0b0c0;display:flex;align-items:center;gap:4px;cursor:pointer" title="Cyan rings at radical-pair reaction sites. Up to 6000 instances per frame — heaviest effect.">
+          <input type="checkbox" id="sparks" style="accent-color:#5a8af0;width:11px;height:11px;margin:0" /> sparks <span style="color:#fa0;font-size:9px;letter-spacing:0.06em">heavy</span>
+        </label>
+        <label style="font-size:10px;color:#b0b0c0;display:flex;align-items:center;gap:4px;cursor:pointer" title="Brighten DNA fibers when radicals come within ~5 nm. Free.">
+          <input type="checkbox" id="hits" checked style="accent-color:#5a8af0;width:11px;height:11px;margin:0" /> DNA hits
+        </label>
         <label style="font-size:10px;color:#b0b0c0;display:flex;align-items:center;gap:4px;cursor:pointer" title="Volume + sprite overlay — verifies the two render paths agree">
           <input type="checkbox" id="compare" style="accent-color:#5a8af0;width:11px;height:11px;margin:0" /> compare
         </label>
+      </div>
+      <div class="row tight" style="margin:6px 0 0 0">
+        <span style="font-size:10px;color:#6a6a7a;min-width:36px">slice</span>
+        <select id="slice-axis" style="background:#1a1a26;color:#c8c8d0;border:1px solid #2a2a3a;border-radius:4px;padding:3px 6px;font-family:inherit;font-size:11px">
+          <option value="3">off</option>
+          <option value="0">X</option>
+          <option value="1">Y</option>
+          <option value="2">Z</option>
+        </select>
+        <input type="range" id="slice-pos" min="0" max="100" value="100" step="1" style="flex:1;accent-color:#5a8af0" />
+        <span id="slice-label" style="font-size:10px;color:#6a6a7a;min-width:32px;text-align:right">100%</span>
       </div>
       <div class="section-h">species</div>
       <div class="species" id="species-toggles"></div>
@@ -150,6 +210,9 @@
         Repo: <a href="https://github.com/abgnydn/webgpu-dna" target="_blank">github.com/abgnydn/webgpu-dna</a>
       </div>
     </div>
+    <div class="hud-cap" id="hud-cap">elapsed time</div>
+    <div class="hud-time" id="hud-time">—</div>
+    <div class="hud-fps ok" id="hud-fps" title="Frames per second (last second average). Toggle effects off if this drops below 30.">— fps</div>
     <script type="module" src="/src/splat/main.ts"></script>
   </body>
   </html>
