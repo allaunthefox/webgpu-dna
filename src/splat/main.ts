@@ -2087,13 +2087,44 @@ saveBinBtn?.addEventListener('click', () => {
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 });
 
+/** Fetch the bundled demo snapshot and load it. Returns false on 404/offline.
+ *  Served same-origin from `/wgdna-default.bin` — the file is .gitignored
+ *  but pulled into `public/` at build time by `tools/fetch-demo.mjs`
+ *  (wired as the `prebuild` npm script). For local dev, run `npm run
+ *  fetch-demo` once to populate `public/wgdna-default.bin`. */
+async function loadBundledDemo(): Promise<boolean> {
+  try {
+    const resp = await fetch('/wgdna-default.bin', { cache: 'force-cache' });
+    if (!resp.ok) return false;
+    const buf = await resp.arrayBuffer();
+    const f = new File([buf], 'wgdna-default.bin');
+    setStatus('Loading bundled demo snapshot…');
+    await loadFile(f);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// "Use ready data" — explicit one-click load of the shipped demo.
+const loadReadyBtn = document.getElementById('load-ready') as HTMLButtonElement | null;
+loadReadyBtn?.addEventListener('click', async () => {
+  loadReadyBtn.disabled = true;
+  setStatus('Fetching bundled demo snapshot…');
+  const ok = await loadBundledDemo();
+  if (!ok) setStatus('Demo snapshot unavailable (offline or 404).', true);
+  loadReadyBtn.disabled = false;
+});
+
 /**
  * Try to auto-load a snapshot, in order:
  *   1) `#handoff=1` in URL → wait for window.opener.postMessage with the blob
- *   2) `/wgdna-default.bin` shipped with the build (for cold landings)
- *   3) Nothing — show the file picker / drop overlay as before
+ *   2) `#empty` in URL → skip auto-load (user wants the empty viewer)
+ *   3) `/wgdna-default.bin` shipped with the build (for cold landings)
+ *   4) Nothing — show the file picker / drop overlay as before
  */
 async function autoLoadSnapshot(): Promise<void> {
+  if (location.hash.includes('empty')) return;
   if (location.hash.includes('handoff=1') && window.opener) {
     setStatus('Waiting for snapshot from harness…');
     const got = await new Promise<File | null>((resolve) => {
@@ -2115,15 +2146,7 @@ async function autoLoadSnapshot(): Promise<void> {
   }
 
   // Cold landing: try the shipped default. 404 is silently OK.
-  try {
-    const resp = await fetch('/wgdna-default.bin', { cache: 'force-cache' });
-    if (resp.ok) {
-      const buf = await resp.arrayBuffer();
-      const f = new File([buf], 'wgdna-default.bin');
-      setStatus('Loading bundled demo snapshot…');
-      await loadFile(f);
-    }
-  } catch { /* offline / 404 — fall through to file picker */ }
+  await loadBundledDemo();
 }
 
 // Bootstrap.

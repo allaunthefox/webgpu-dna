@@ -661,8 +661,9 @@
     Two correctness checks ride along inside the viewer. The <strong>round-trip panel</strong> verifies that the .bin contains exactly what the harness computed (alive-count monotonicity, species partition sum, position finiteness). The <strong>compare</strong> overlay draws sprites on top of the volume so the two render paths can be visually checked across all 8 checkpoints and any camera angle — no drift means the splat math is faithful to the data.
   </p>
   <div class="cta">
-    <a class="btn primary" href="#harness">Run a sim and visualize →</a>
-    <a class="btn secondary" href="/splat.html">Open viewer (drop your own .bin) ↗</a>
+    <a class="btn primary" href="/splat.html" target="_blank" rel="noopener">⚡ View ready demo ↗</a>
+    <a class="btn secondary" href="#harness">Run a sim and visualize →</a>
+    <a class="btn secondary" href="/splat.html#empty" target="_blank" rel="noopener">Open viewer (drop your own .bin) ↗</a>
   </div>
 </section>
 
@@ -680,6 +681,7 @@
   <div class="controls">
     <button class="btn" id="run">▶ Run validation</button>
     <button class="btn primary" id="visualize-4d" title="Run one 10 keV pass and open the 4D viewer in a new tab — no download step.">🌌 Visualize chemistry</button>
+    <a class="btn primary" href="/splat.html" target="_blank" rel="noopener" id="visualize-ready" title="Skip the GPU run — open the 4D viewer with the bundled demo snapshot already loaded.">⚡ View ready demo</a>
     <button class="btn bs" id="reset">Reset</button>
     <button class="btn bs" id="export-4d" title="Run one 10 keV pass and download the snapshot .bin for offline use">⬇ Save .bin</button>
     <label>N / energy <input type="number" id="np" value="4096" min="1024" max="32768" step="1024"></label>

@@ -17,4 +17,13 @@ data/
 # Vercel / local tool caches
 .vercel
 .turbo
+.wrangler/
+
+# Demo + media artifacts (hosted out-of-repo to avoid bloat).
+# wgdna-default.bin is fetched at runtime by the 4D viewer — fetch URL lives
+# in src/splat/main.ts → loadBundledDemo().
+public/wgdna-default.bin
+splat.html.zip
+demo_recording.webp
+final_demo.webp
 

@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "fetch-demo": "node tools/fetch-demo.mjs",
+    "prebuild": "node tools/fetch-demo.mjs",
     "build": "tsc && vite build",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/ tests/",
