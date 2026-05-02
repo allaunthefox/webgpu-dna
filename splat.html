@@ -17,7 +17,8 @@
     <style>
       html, body { margin: 0; padding: 0; height: 100%; background: #050507; color: #c8c8d0;
         font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow: hidden; }
-      #c { display: block; width: 100vw; height: 100vh; }
+      #c { display: block; width: 100vw; height: 100vh; touch-action: none; }
+      html, body { overscroll-behavior: none; }
       .panel { position: absolute; top: 12px; left: 12px; background: rgba(8, 8, 14, 0.85);
         border: 1px solid #1a1a26; border-radius: 10px; padding: 12px 14px; font-size: 12px;
         backdrop-filter: blur(12px); max-width: 380px; max-height: calc(100vh - 24px); overflow-y: auto; }
@@ -74,6 +75,22 @@
         pointer-events: none; border: 3px dashed #5a8af0; }
       .drop-overlay.active { display: flex; }
 
+      /* Header strip with collapse + cinematic toggles. */
+      .panel .head-row { display: flex; align-items: center; gap: 6px; }
+      .panel .head-row h1 { flex: 1; min-width: 0; }
+      .panel .head-row button {
+        padding: 3px 8px; font-size: 10px; background: #1a1a26;
+        border: 1px solid #2a2a3a; color: #c8c8d0; border-radius: 4px;
+        cursor: pointer; flex-shrink: 0;
+      }
+      .panel .head-row button:hover { background: #22222e; border-color: #5a8af0; color: #5a8af0; }
+      .panel .head-row button.cine { background: #1f3a8a; border-color: #2a4d9a; color: #fff; }
+      .panel .head-row button.cine:hover { background: #2a4ba0; }
+
+      .panel .body { max-height: 90vh; transition: max-height 0.25s ease, opacity 0.2s ease; overflow: hidden; }
+      body.panel-collapsed .panel .body { max-height: 0; opacity: 0; pointer-events: none; }
+      body.panel-collapsed .panel { max-height: none; padding-bottom: 8px; }
+
       /* Big time HUD — fades in during play, dims when paused. */
       .hud-time {
         position: fixed; left: 50%; bottom: 32px; transform: translateX(-50%);
@@ -112,12 +129,51 @@
       body.cinematic .hud-fps { display: none; }
       body.cinematic .hud-time { opacity: 0.92; }
       body.cinematic .hud-cap { opacity: 0.85; }
+
+      /* === Mobile + tablet === */
+      @media (max-width: 720px), (pointer: coarse) {
+        .panel {
+          top: 8px; left: 8px; right: 8px;
+          max-width: none; max-height: 60vh;
+          padding: 10px 12px; font-size: 12px;
+        }
+        .panel h1 { font-size: 12px; }
+        .panel small { font-size: 10px; margin: 4px 0 8px; }
+        .panel input[type=file] { font-size: 11px; max-width: 60%; }
+        /* Bigger touch targets for buttons + sliders. */
+        .panel button { padding: 8px 12px; font-size: 12px; min-height: 32px; }
+        .panel .checkpoints button { padding: 6px 8px; font-size: 11px; min-width: 44px; }
+        .panel input[type=range] { height: 28px; }
+        .panel input[type=number] { width: 64px; padding: 6px 8px; font-size: 12px; }
+        .panel select { padding: 6px 8px; font-size: 12px; min-height: 32px; }
+        .species label { font-size: 11px; padding: 2px 0; }
+
+        .hud-time { font-size: clamp(28px, 8vw, 48px); bottom: 18px; }
+        .hud-cap { bottom: clamp(60px, 18vw, 90px); font-size: 9px; }
+        .hud-fps { top: 8px; right: 8px; font-size: 10px; padding: 3px 7px; }
+
+        /* Collapsed panel: compact pill in the corner. */
+        body.panel-collapsed .panel {
+          width: auto; right: auto;
+          padding: 6px 10px;
+        }
+      }
+
+      /* Disable hover-only effects on touch devices so taps don't get sticky :hover state. */
+      @media (hover: none) {
+        .panel button:hover { background: #1a1a26; border-color: #2a2a3a; color: #c8c8d0; }
+      }
     </style>
   </head>
   <body>
     <canvas id="c"></canvas>
     <div class="panel">
-      <h1>WGDNA-4D viewer <span class="tag">webgpudna · kernel-fusion</span></h1>
+      <div class="head-row">
+        <h1>WGDNA-4D viewer <span class="tag">webgpudna · kernel-fusion</span></h1>
+        <button id="cine-btn" class="cine" title="Cinematic mode (C key) — hides panel, plays at 0.4×, all polish on">▶ cine</button>
+        <button id="panel-toggle" title="Collapse panel">▾</button>
+      </div>
+      <div class="body">
       <small>Browser-native 4D visualization of Geant4-DNA radical chemistry. Drop a snapshot <code>.bin</code> or pick a file below.</small>
       <div class="row">
         <input type="file" id="file" accept=".bin" />
@@ -209,6 +265,7 @@
         <br />
         Repo: <a href="https://github.com/abgnydn/webgpu-dna" target="_blank">github.com/abgnydn/webgpu-dna</a>
       </div>
+      </div><!-- /.body -->
     </div>
     <div class="hud-cap" id="hud-cap">elapsed time</div>
     <div class="hud-time" id="hud-time">—</div>

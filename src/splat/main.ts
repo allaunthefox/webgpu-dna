@@ -1301,6 +1301,8 @@ function setCinematic(on: boolean): void {
     if (playBtn) playBtn.textContent = '⏸ pause';
     if (speedInput) speedInput.value = '0.4';
     document.body.classList.add('cinematic');
+    const cb = document.getElementById('cine-btn') as HTMLButtonElement | null;
+    if (cb) cb.textContent = '■ exit';
     setStatus('Cinematic mode — press C again to exit.');
   } else {
     const s = state.cinematicStash;
@@ -1320,6 +1322,8 @@ function setCinematic(on: boolean): void {
     }
     state.cinematicStash = null;
     document.body.classList.remove('cinematic');
+    const cb = document.getElementById('cine-btn') as HTMLButtonElement | null;
+    if (cb) cb.textContent = '▶ cine';
     setStatus('Exited cinematic mode.');
   }
 }
@@ -2632,6 +2636,60 @@ canvas.addEventListener('wheel', (e) => {
   markInteraction();
 }, { passive: false });
 
+// Touch + pinch — phones/tablets. One finger orbits (same as mouse drag),
+// two fingers pinch-to-zoom. preventDefault stops the page from scrolling.
+const touch = { active: false, lastX: 0, lastY: 0, pinchDist: 0 };
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  if (e.touches.length === 1) {
+    const t = e.touches[0];
+    touch.active = true;
+    touch.lastX = t.clientX;
+    touch.lastY = t.clientY;
+    touch.pinchDist = 0;
+  } else if (e.touches.length === 2) {
+    const a = e.touches[0], b = e.touches[1];
+    touch.pinchDist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    touch.active = false;
+  }
+  markInteraction();
+}, { passive: false });
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  if (e.touches.length === 1 && touch.active) {
+    const t = e.touches[0];
+    const dx = t.clientX - touch.lastX;
+    const dy = t.clientY - touch.lastY;
+    touch.lastX = t.clientX;
+    touch.lastY = t.clientY;
+    state.cam.yaw -= dx * 0.005;
+    state.cam.pitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, state.cam.pitch + dy * 0.005));
+  } else if (e.touches.length === 2) {
+    const a = e.touches[0], b = e.touches[1];
+    const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    if (touch.pinchDist > 0 && d > 0) {
+      const ratio = touch.pinchDist / d;
+      state.cam.radius = Math.max(50, Math.min(1e6, state.cam.radius * ratio));
+    }
+    touch.pinchDist = d;
+  }
+  markInteraction();
+}, { passive: false });
+canvas.addEventListener('touchend', (e) => {
+  if (e.touches.length === 0) {
+    touch.active = false;
+    touch.pinchDist = 0;
+  } else if (e.touches.length === 1) {
+    // Lifted one of two fingers — resume single-finger orbit from the remaining touch.
+    const t = e.touches[0];
+    touch.active = true;
+    touch.lastX = t.clientX;
+    touch.lastY = t.clientY;
+    touch.pinchDist = 0;
+  }
+  markInteraction();
+});
+
 // -----------------------------------------------------------------------------
 // Polish: drag-drop, play/pause, species toggles, reset cam, screenshot
 // -----------------------------------------------------------------------------
@@ -2886,6 +2944,35 @@ shotBtn?.addEventListener('click', () => {
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
   }, 'image/png');
 });
+
+// Cinematic mode button (UI parity with the C key).
+const cineBtn = document.getElementById('cine-btn') as HTMLButtonElement | null;
+cineBtn?.addEventListener('click', () => {
+  setCinematic(!state.cinematic);
+  if (cineBtn) cineBtn.textContent = state.cinematic ? '■ exit' : '▶ cine';
+});
+
+// Panel collapse — also auto-collapse on first load on touch devices so the
+// cloud isn't covered by chrome.
+const panelToggleBtn = document.getElementById('panel-toggle') as HTMLButtonElement | null;
+function setPanelCollapsed(collapsed: boolean): void {
+  document.body.classList.toggle('panel-collapsed', collapsed);
+  if (panelToggleBtn) panelToggleBtn.textContent = collapsed ? '▸' : '▾';
+  try { localStorage.setItem('wgdna-panel', collapsed ? '1' : '0'); } catch { /* private mode */ }
+}
+panelToggleBtn?.addEventListener('click', () => {
+  setPanelCollapsed(!document.body.classList.contains('panel-collapsed'));
+});
+// Restore last-session preference, defaulting collapsed on touch devices.
+{
+  let collapsed = false;
+  try {
+    const v = localStorage.getItem('wgdna-panel');
+    if (v === '1') collapsed = true;
+    else if (v === null) collapsed = matchMedia('(pointer: coarse)').matches;
+  } catch { collapsed = matchMedia('(pointer: coarse)').matches; }
+  setPanelCollapsed(collapsed);
+}
 
 // Keyboard shortcuts.
 window.addEventListener('keydown', (e) => {
