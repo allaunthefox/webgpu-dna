@@ -189,6 +189,17 @@
       "category": "Radiobiology",
       "githubRepo": "https://github.com/abgnydn/webgpu-dna",
       "cta": "Open preview →"
+    },
+    "webgpuq": {
+      "key": "webgpuq",
+      "url": "https://webgpu-q.vercel.app",
+      "domain": "webgpu-q.vercel.app",
+      "name": "webgpu-q",
+      "tagline": "Full-featured quantum circuit simulator in a single browser tab.",
+      "shortDesc": "Statevector + MPS quantum simulator running on commodity hardware via WebGPU compute. Six-level research ladder from bandwidth-bound statevector through MPS, kernel fusion, WebRTC swarm, IBM hardware cross-verify, to chemistry/VQE. No CUDA, no install.",
+      "category": "Quantum",
+      "badge": "research",
+      "cta": "Open the simulator →"
     }
   },
   "CROSSLINKS": {
@@ -196,31 +207,41 @@
       "webgpudna",
       "gpubench",
       "zerotvm",
-      "neuropulse"
+      "neuropulse",
+      "webgpuq",
+      "barisgunaydin"
     ],
     "webgpudna": [
       "kernelfusion",
       "gpubench",
       "zerotvm",
-      "neuropulse"
+      "neuropulse",
+      "webgpuq",
+      "barisgunaydin"
     ],
     "zerotvm": [
       "kernelfusion",
       "webgpudna",
       "gpubench",
-      "neuropulse"
+      "neuropulse",
+      "webgpuq",
+      "barisgunaydin"
     ],
     "gpubench": [
       "kernelfusion",
       "webgpudna",
       "zerotvm",
-      "neuropulse"
+      "neuropulse",
+      "webgpuq",
+      "barisgunaydin"
     ],
     "neuropulse": [
       "kernelfusion",
       "webgpudna",
       "zerotvm",
-      "gpubench"
+      "gpubench",
+      "webgpuq",
+      "barisgunaydin"
     ],
     "barisgunaydin": [
       "kernelfusion",
@@ -228,6 +249,7 @@
       "gpubench",
       "zerotvm",
       "neuropulse",
+      "webgpuq",
       "markview",
       "safenpm"
     ],
@@ -242,6 +264,14 @@
     "fusedlora": [
       "kernelfusion",
       "zerotvm",
+      "barisgunaydin"
+    ],
+    "webgpuq": [
+      "kernelfusion",
+      "webgpudna",
+      "gpubench",
+      "zerotvm",
+      "neuropulse",
       "barisgunaydin"
     ],
     "webgpuDna": [
@@ -261,6 +291,7 @@
     "https://zerotvm.com",
     "https://webgpudna.com",
     "https://neuropulse.live",
+    "https://webgpu-q.vercel.app",
     "https://markview.ai",
     "https://safenpm.dev",
     "https://fused-lora.pages.dev",
