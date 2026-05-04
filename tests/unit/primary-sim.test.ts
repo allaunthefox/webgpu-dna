@@ -48,17 +48,30 @@ for (let sh = 0; sh < 5; sh++) {
   XWT.push(parseArr(`XWT${sh}`));
 }
 
-// Load Born shell fractions
-const bornRaw = readFileSync(join(__dirname, '../../data/g4emlow/dna/sigma_ionisation_e_born.dat'), 'utf-8');
-const bornLines = bornRaw.split('\n').filter(l => l.trim() && !l.startsWith('#'));
-const bornData = bornLines.map(l => l.trim().split(/\s+/).map(Number));
+// Load Born shell fractions + Sanche vib spectrum from G4EMLOW. The full
+// dataset (data/g4emlow/) is 245 MB and gitignored — set HAS_G4DATA from
+// whether both files actually open so this whole suite skips gracefully on
+// CI runners (where the data isn't checked out) without faking the read.
+let bornData: number[][] = [];
+let VE: number[] = [];
+let VS: number[] = [];
+let HAS_G4DATA = false;
+try {
+  const bornRaw = readFileSync(join(__dirname, '../../data/g4emlow/dna/sigma_ionisation_e_born.dat'), 'utf-8');
+  const bornLines = bornRaw.split('\n').filter(l => l.trim() && !l.startsWith('#'));
+  bornData = bornLines.map(l => l.trim().split(/\s+/).map(Number));
 
-// Sanche vib
-const vibRaw = readFileSync(join(__dirname, '../../data/g4emlow/dna/sigma_excitationvib_e_sanche.dat'), 'utf-8');
-const vibLines = vibRaw.split('\n').filter(l => l.trim());
-const vibData = vibLines.map(l => l.trim().split(/\s+/).map(Number));
-const VE = vibData.map(r => r[0]);
-const VS = vibData.map(r => r.slice(1).reduce((a, b) => a + b, 0) * 0.01 * 2); // 2x liquid
+  const vibRaw = readFileSync(join(__dirname, '../../data/g4emlow/dna/sigma_excitationvib_e_sanche.dat'), 'utf-8');
+  const vibLines = vibRaw.split('\n').filter(l => l.trim());
+  const vibData = vibLines.map(l => l.trim().split(/\s+/).map(Number));
+  VE = vibData.map(r => r[0]);
+  VS = vibData.map(r => r.slice(1).reduce((a, b) => a + b, 0) * 0.01 * 2); // 2x liquid
+  HAS_G4DATA = true;
+} catch {
+  // G4EMLOW data not present — `describe.skipIf(!HAS_G4DATA)` below skips
+  // the simulation suite. Run `npm run convert` after extracting G4EMLOW
+  // into data/g4emlow/ to enable this test locally.
+}
 
 const NW = 33.4;
 const CUTOFF = 7.4;
@@ -207,7 +220,7 @@ function simulatePrimary(seed: number): { ions: number; path: number; meanW: num
   return { ions, path, meanW: ions > 0 ? totalW / ions : 0 };
 }
 
-describe('CPU reference primary simulation', () => {
+describe.skipIf(!HAS_G4DATA)('CPU reference primary simulation', () => {
   it('produces ~198 ions/pri at 10 keV (matching Geant4)', () => {
     // Run 100 primaries with different seeds
     let totalIons = 0;
