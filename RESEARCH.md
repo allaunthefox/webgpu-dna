@@ -78,7 +78,7 @@ Each level has its own `protocol.md` under `experiments/level-N-<slug>/`.
 
 | Level | Status | Notes |
 |-------|--------|-------|
-| 1 — Cross sections | **In progress.** E1 passing; E2–E4 protocols only. | Stage 1 ships E1 (Born ionization total XS). |
+| 1 — Cross sections | **In progress.** E1 + E2 passing; E3–E4 protocols only. | Stages 1–2 shipped Born ionization + Emfietzoglou excitation bit-match. |
 | 2 — Track structure | Protocol only. | Replaces ad-hoc `validation/compare.py`. |
 | 3 — Pre-chemistry | Protocol only. | Awaits Geant4 chem6 ntuple ingest. |
 | 4 — Chemistry | Protocol only. | Awaits Tran 2024 reference ingest. |
