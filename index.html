@@ -513,7 +513,7 @@
         <tr>
           <td class="aspect">Physics fidelity @ 10 keV</td>
           <td class="old">Reference (by construction)</td>
-          <td class="new">CSDA <strong>0.985×</strong> · energy conservation <strong>100.0%</strong> · ions/primary exact match · chemistry within textbook tolerances<div class="hint">Verified side-by-side against a Geant4 11.4 dnaphysics ntuple</div></td>
+          <td class="new">CSDA <strong>0.985×</strong> · energy conservation <strong>100.0%</strong> · ions/primary exact match · chemistry G-values <strong>0.6×–1.2×</strong> Karamitros 2011 (LET-dependent; G(OH)/G(e⁻aq) sit below the low-LET reference as expected at 10 keV)<div class="hint">Verified side-by-side against a Geant4 11.4.1 dnaphysics ntuple</div></td>
         </tr>
         <tr>
           <td class="aspect">Reproducibility</td>
@@ -567,7 +567,7 @@
       <ul>
         <li>Product tracking: H₂O₂ and OH⁻ with full re-pairing</li>
         <li>7 time checkpoints, 0.1 ps → 1 μs</li>
-        <li>G(H) / G(H₂) match Karamitros within 15%</li>
+        <li>G(H₂) ≈1.1× and G(H) ≈1.2× Karamitros 2011; G(OH)/G(e⁻aq) deficit at 10 keV is expected vs the low-LET (~1 MeV) reference</li>
       </ul>
     </div>
 
