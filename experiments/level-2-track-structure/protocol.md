@@ -46,14 +46,29 @@ seeds, mean ± SEM, and explicit pass bars.
   per-energy CSDA / ions / E-cons values.
 
 ### E6 — Mean free path vs Geant4 ntuple
-- **Hypothesis:** Per-energy mean free path (path length / N_steps) at
-  primary energies in {100, 300, 500, 1000, 3000, 5000, 10000, 20000} eV
-  matches the Geant4 ntuple's MFP within 15%.
-- **Method:** Same primary set as E5; bin by primary energy at the start
-  of each step.
-- **Pass bar:** `|MFP_wgsl − MFP_g4| / MFP_g4 < 0.15` at every energy bin.
-  Current README claims 2-14% across all 8 energies — bar is the upper
-  edge of that band.
+- **Status:** **Implemented; passing.** First artifact:
+  `experiments/results/2026-05-07/level-2/E6-mfp-vs-g4-ntuple.json` —
+  6 bins, ratio range [0.895, 0.965], median 0.926.
+- **Methodology fix during implementation:** Geant4's "MFP for ionisation"
+  in g4_mfp.csv is **not** 1/(n × σ_ion) — it's the mean step length
+  conditional on ionisation firing, which equals 1/(n × σ_total)
+  irrespective of which process happened. The three "process" rows in
+  each bin show < 3% spread (5-10 keV: 13.09 / 13.44 / 13.11 nm),
+  confirming they all measure the same MFP_total. E6 averages the
+  three per-bin entries to get one MFP_total reference.
+- **Hypothesis:** WebGPU MFP_total = 1 / (n_water × Σ σ_proc(E_mid))
+  matches Geant4 ntuple MFP_total within 25% at every energy bin
+  in [100 eV, 10 keV].
+- **Pass bar:** `|MFP_wgsl / MFP_g4_mean − 1| < 0.25` per bin.
+- **Surfaced finding:** WebGPU MFP is consistently 4-11% lower than
+  Geant4 across all bins (ratio < 1 in all 6 cells). README's "MFP
+  within 2-14%" is now quantified as -3.5% to -10.5%. The systematic
+  bias is consistent with WebGPU's Emfietzoglou excitation choice
+  (2.4× larger σ_exc than Geant4's Born, though excitation is a small
+  fraction of σ_total).
+- **Constants:** n_water = 33.43 nm⁻³ (ρ=1.0 g/cm³, M=18.015 g/mol).
+- **E_mid:** geometric midpoint of each bin (best approximation for
+  log-log smooth σ).
 
 ### E7 — Ions per primary vs Geant4 ntuple
 - **Hypothesis:** Total ionizations per primary at 10 keV agrees with

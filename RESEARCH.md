@@ -79,7 +79,7 @@ Each level has its own `protocol.md` under `experiments/level-N-<slug>/`.
 | Level | Status | Notes |
 |-------|--------|-------|
 | 1 — Cross sections | **Complete.** E1, E2, E3, E4, E4b all passing. | Born ionization + Emfietzoglou excitation + Champion elastic + Sanche vibrational total + per-mode fractions bit-match. |
-| 2 — Track structure | **In progress.** E5 implemented at 10 keV (CSDA, E-cons, ions). Multi-energy E5 deferred — needs per-energy WebGPU dumps. | Replaces ad-hoc `validation/compare.py` with structured `validation/webgpu-results.json` + research artifact. |
+| 2 — Track structure | **In progress.** E5 (CSDA + E-cons + ions @ 10 keV) and E6 (MFP across 6 energy bins) implemented and passing. E7/E8 deferred — need per-energy WebGPU dumps. | Replaces ad-hoc `validation/compare.py` with structured `validation/webgpu-results.json` + research artifacts. |
 | 3 — Pre-chemistry | Protocol only. | Awaits Geant4 chem6 ntuple ingest. |
 | 4 — Chemistry | **In progress.** E10 implemented (IRT vs Karamitros 2011 across 5 energies). E11 (GPU vs IRT) deferred — needs browser-runner infra. | |
 | 5 — DNA damage | Protocol only. | Awaits Friedland 2011 / molecularDNA reference ingest. |

@@ -80,9 +80,17 @@ threshold; sub-5-keV deviations reported as informational findings.
   are excluded from E10 because Karamitros 2011 is a low-LET reference
   and sub-keV electrons are deep in the high-LET regime where
   bias-correction is large.
-- **Future E10b:** add Tran 2024 (ESA BioRad III chemistry review,
-  Med Phys) chem6 reference at matched LET. Without that second
-  reference, the LET-deficit framing isn't falsifiable end-to-end.
+- **Future E10b — Tran 2024 chem6 at matched LET.** Tran 2024 (Med
+  Phys, ESA BioRad III review) Fig 5 shows G(eaq) and G(OH) for "1 MeV
+  electrons with eLossMin=10 keV, eLossMax=10.1 keV" — i.e. restricted
+  to electrons depositing ~10 keV per event, which gives an **LET
+  matched to our 10 keV primary data**. That's a much tighter cross-
+  reference than the Karamitros 2011 low-LET (~1 MeV) frame.
+  Blocked: 2026-05-07 ingest attempt via WebFetch failed because the
+  G-values are embedded in figures rather than tabular text. Path
+  forward is either (a) PDF + manual digitization of Fig 5 / Tabs
+  cited in [67-69], (b) running Geant4-DNA chem6 example locally,
+  or (c) fetching one of Tran's three cited experimental datasets.
 
 ### E11 — GPU chemistry backend vs IRT worker
 - **Status:** **Deferred — needs browser-runner infrastructure.**

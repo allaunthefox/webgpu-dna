@@ -12,6 +12,7 @@ import { runE3 } from './level-1-cross-sections/E3-elastic-xs-match.mjs';
 import { runE4 } from './level-1-cross-sections/E4-vib-xs-match.mjs';
 import { runE4b } from './level-1-cross-sections/E4b-vib-mode-fractions.mjs';
 import { runE5 } from './level-2-track-structure/E5-csda-vs-g4-ntuple.mjs';
+import { runE6 } from './level-2-track-structure/E6-mfp-vs-g4-ntuple.mjs';
 import { runE10 } from './level-4-chemistry/E10-irt-vs-karamitros.mjs';
 
 const REGISTRY = {
@@ -21,6 +22,7 @@ const REGISTRY = {
   E4:  { run: runE4,  level: 'level-1', id: 'E4-vib-xs-match' },
   E4b: { run: runE4b, level: 'level-1', id: 'E4b-vib-mode-fractions' },
   E5:  { run: runE5,  level: 'level-2', id: 'E5-csda-vs-g4-ntuple' },
+  E6:  { run: runE6,  level: 'level-2', id: 'E6-mfp-vs-g4-ntuple' },
   E10: { run: runE10, level: 'level-4', id: 'E10-irt-vs-karamitros' },
 };
 
