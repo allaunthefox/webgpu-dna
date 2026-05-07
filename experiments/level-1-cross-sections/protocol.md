@@ -123,8 +123,20 @@ case with the failure surfaced.
   energy-loss channel for sub-100 eV thermalizing secondaries. A
   missing 2× liquid-phase factor would silently halve secondary
   thermalization range — peak_ratio bar would land at 0.5 (hard fail).
-- **Future E4b:** per-mode fraction (XVMF[38×9]) bit-match against
-  individual mode σ / total σ. Out of scope for closing L1.
+### E4b — Sanche per-mode XVMF fraction bit-match
+- **Status:** **Implemented; passing.** First artifact:
+  `experiments/results/2026-05-07/level-1/E4b-vib-mode-fractions.json`
+  — 342 (energy × mode) pairs, max sum dev 4e-8.
+- **Hypothesis:** XVMF[i*9+k] equals raw σ_mode_k(E_i) / Σ_j σ_mode_j(E_i)
+  at fp32 precision; per-energy fraction sums equal 1 within 1e-4.
+- **Pass bar:** median rel_err < 1e-5; p90 < 1e-4; max < 1e-3; sum
+  deviation < 1e-4. Same fp32 round-off floor as E4 (non-subsampled).
+- **Why this is needed beyond E4:** E4 catches scale-factor bugs
+  (peak_ratio bar). E4b catches per-mode-mapping bugs that cancel in
+  the sum — e.g. swapping mode 3 and mode 5 σ values would leave E4
+  totally happy but silently shift the energy-loss distribution
+  (VIB_LEV[3] = 0.092 eV vs VIB_LEV[5] = 0.417 eV — 4.5× different
+  loss per event).
 
 ## Artifacts
 Each experiment writes
