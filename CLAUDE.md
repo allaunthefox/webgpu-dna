@@ -7,6 +7,36 @@ for radiobiology) to WebGPU compute shaders using kernel fusion architecture.
 One WGSL dispatch per batch for primaries — one GPU thread per primary electron,
 full history in a loop, zero per-step dispatch overhead.
 
+## Research protocol
+
+The repo is on a research-grade ladder mirroring `~/webgpu-q`. The
+master doc is `RESEARCH.md`. Per-level protocols live under
+`experiments/level-N-<slug>/protocol.md`. Stage 1 ships **Level 1, E1**
+(Born ionization total cross section vs G4EMLOW) — passing artifact
+committed under `experiments/results/<date>/level-1/`.
+
+Six levels:
+1. Cross sections vs G4EMLOW (E1–E4)
+2. Track structure vs Geant4 11.4.1 ntuple (E5–E8)
+3. Pre-chemistry initial G-values vs chem6 (E9)
+4. Chemistry G-values vs Karamitros 2011 / Tran 2024 (E10–E11)
+5. DNA damage vs Friedland 2011 / molecularDNA (E12–E14)
+6. Performance vs Geant4 single-thread baseline (E15–E16)
+
+Working pattern (mirroring webgpu-q):
+- Each stage = one focused commit with the protocol update + the
+  experiment + the artifact JSON.
+- Failed experiments are committed with `status: "fail"` and a
+  diagnosis. Failures are evidence — never rerun until the test passes.
+- Every artifact carries git SHA, timestamp, named seed (from
+  `experiments/lib/seeds.mjs`), pass bar, and per-row observations.
+- Run via `npm run experiments -- E1` (CLI dispatcher in
+  `experiments/runner.mjs`).
+
+When extending: write the protocol entry **before** the code, commit
+both together. CLAUDE.md should describe the next stage before it
+lands — the discipline that makes the doc one stage ahead of git.
+
 ## Architecture (high level)
 
 See `ARCHITECTURE.md` for the full pipeline diagram and buffer map. Summary:
