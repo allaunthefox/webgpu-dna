@@ -10,6 +10,7 @@ import { runE1 } from './level-1-cross-sections/E1-ion-xs-match.mjs';
 import { runE2 } from './level-1-cross-sections/E2-exc-xs-match.mjs';
 import { runE3 } from './level-1-cross-sections/E3-elastic-xs-match.mjs';
 import { runE4 } from './level-1-cross-sections/E4-vib-xs-match.mjs';
+import { runE5 } from './level-2-track-structure/E5-csda-vs-g4-ntuple.mjs';
 import { runE10 } from './level-4-chemistry/E10-irt-vs-karamitros.mjs';
 
 const REGISTRY = {
@@ -17,6 +18,7 @@ const REGISTRY = {
   E2:  { run: runE2,  level: 'level-1', id: 'E2-exc-xs-match' },
   E3:  { run: runE3,  level: 'level-1', id: 'E3-elastic-xs-match' },
   E4:  { run: runE4,  level: 'level-1', id: 'E4-vib-xs-match' },
+  E5:  { run: runE5,  level: 'level-2', id: 'E5-csda-vs-g4-ntuple' },
   E10: { run: runE10, level: 'level-4', id: 'E10-irt-vs-karamitros' },
 };
 
@@ -56,7 +58,9 @@ async function main() {
       : s.nEnergies !== undefined
         ? `energies=${s.nEnergies}  rows=${s.nRows}  failed=${s.nFailedRows ?? 0}  ` +
           `let_trend=OH:${s.letTrendMonotonic?.OH ? '✓' : '✗'} eaq:${s.letTrendMonotonic?.eaq ? '✓' : '✗'}`
-        : `rows=${result.rows.length}`;
+        : s.headline !== undefined
+          ? `metrics=${s.nMetrics ?? result.rows.length}  failed=${s.nFailedMetrics ?? 0}  ${s.headline}`
+          : `rows=${result.rows.length}`;
   console.log(`[${id}] ${tag}  ${headline}  → ${outPath.replace(REPO_ROOT + '/', '')}`);
   if (result.diagnosis) console.log(`  diagnosis: ${result.diagnosis}`);
 

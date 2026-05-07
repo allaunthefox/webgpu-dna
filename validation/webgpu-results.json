@@ -1,0 +1,31 @@
+{
+  "$comment": "WebGPU validation harness numbers, structured copy of validation/compare.py's WEBGPU dict. Source: browser run at 2026-04-21, post-migration verification — two independent IRT runs averaged for G-values to smooth RNG variance between seeds. Update by re-running the harness in-browser and pasting the latest values; the IRT G-values can be regenerated Node-side via tools/run_irt.cjs (verified to match this dict exactly at 10 keV).",
+  "harnessVersion": "2026-04-21 post-migration",
+  "primaryEnergyEv": 10000,
+  "nPrimaries": 4096,
+  "tracking": {
+    "csdaNm": 2714.4,
+    "ionsPerPriPrimaryOnly": 194.1,
+    "secPerPri": 143.2,
+    "eConservationPct": 100.0
+  },
+  "preChemistry": {
+    "G_OH_init": 4.51,
+    "G_eaq_init": 3.79,
+    "G_H_init": 0.79
+  },
+  "chemistry1Us": {
+    "G_OH": 1.551,
+    "G_eaq": 1.407,
+    "G_H": 0.706,
+    "G_H2O2": 0.604,
+    "G_H2": 0.468
+  },
+  "dnaDamage": {
+    "SSB_dir": 24,
+    "SSB_ind": 0,
+    "DSB": 2,
+    "kernelHits": 117,
+    "$comment": "Counts on the 21×21 B-DNA fiber grid (3.89 Mbp target) at 10 keV, ~0.243 Gy at 30 μm box. Geometry-dependent — see CLAUDE.md indirect SSB caveat."
+  }
+}
