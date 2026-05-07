@@ -106,9 +106,25 @@ case with the failure surfaced.
   for shipping E1 first as a template for the others.
 
 ### E4 — Sanche vibrational total XS vs G4EMLOW
-- **Status:** **Deferred.** Compares the 9-mode Sanche table against
-  `sigma_excitationvib_e_sanche.dat` with the 2× liquid-phase factor
-  applied per CLAUDE.md.
+- **Status:** **Implemented; passing.** First artifact:
+  `experiments/results/2026-05-07/level-1/E4-vib-xs-match.json` —
+  peak_ratio 1.0000, median 2.6e-16, max 6e-16 (machine precision).
+- **Hypothesis:** σ_total_wgsl = XVS agrees with raw σ_total ×
+  scale (0.01 × 2.0 liquid = 0.02 nm²) at every grid point.
+- **Why bars are tight (1e-3 max vs L1 default 1.5e-1):** Sanche WGSL
+  is non-subsampled — converter passes the raw 38-point grid through
+  unchanged. Only fp32 round-off applies. L1 default bars would miss
+  real regressions on this XS family.
+- **Data range:** [1.7 eV, 100 eV] — XVE[0]=0 placeholder excluded
+  (sub-physical), XVE[-1]=100 is the source upper limit. The 9 mode
+  thresholds (0.01–0.835 eV per VIB_LEV) are all below 1.7 eV so the
+  full range above E=0 has all modes potentially active.
+- **Why this matters:** vibrational excitation is the dominant
+  energy-loss channel for sub-100 eV thermalizing secondaries. A
+  missing 2× liquid-phase factor would silently halve secondary
+  thermalization range — peak_ratio bar would land at 0.5 (hard fail).
+- **Future E4b:** per-mode fraction (XVMF[38×9]) bit-match against
+  individual mode σ / total σ. Out of scope for closing L1.
 
 ## Artifacts
 Each experiment writes

@@ -20,4 +20,5 @@ alongside passing ones. Each artifact carries:
 | 2026-05-07 | L1 | E1-ion-xs-match       | pass | peak_ratio 0.9987, median 8.46e-4, p90 1.78e-2 vs G4EMLOW Born σ_ion |
 | 2026-05-07 | L1 | E2-exc-xs-match       | pass | peak_ratio 0.9970, median 2.42e-4, p90 3.51e-3 vs G4EMLOW Emfietzoglou σ_exc |
 | 2026-05-07 | L1 | E3-elastic-xs-match   | pass | peak_ratio 0.9751, median 1.25e-4, p90 7.78e-4 vs G4EMLOW Champion σ_el (retroactive 334× catcher) |
+| 2026-05-07 | L1 | E4-vib-xs-match       | pass | peak_ratio 1.0000, median 2.6e-16, max 6e-16 vs G4EMLOW Sanche σ_vib (closes L1) |
 | 2026-05-07 | L4 | E10-irt-vs-karamitros | pass | 5 energies (1/3/5/10/20 keV) × 5 species vs Karamitros 2011 — surfaced G(eaq) V-shape at 1-3 keV (real track-end effect, ~40σ outside MC noise) |
