@@ -14,9 +14,9 @@
     }
   },
   "env": {
-    "gitSha": "8fe5ec01ef6d88abad698c8c785797d6fbaeca60",
+    "gitSha": "962e14775fb01bc082968574d60d7e559e2c027c",
     "gitDirty": true,
-    "timestamp": "2026-05-07T12:56:42.534Z",
+    "timestamp": "2026-05-07T13:25:51.511Z",
     "runner": "node",
     "nodeVersion": "v24.5.0",
     "platform": "darwin",
@@ -27,6 +27,21 @@
   },
   "status": "pass",
   "diagnosis": null,
+  "summary": {
+    "nRows": 58,
+    "nInRange": 58,
+    "nOutOfRange": 0,
+    "peakSigmaRawNm2": 0.138523650336866,
+    "peakSigmaWgslNm2": 0.13507018,
+    "peakRatio": 0.9750694532777057,
+    "medianRelErr": 0.00012510168938020778,
+    "p90RelErr": 0.0007784280325744319,
+    "maxRelErrMeaningful": 0.003263748404812878,
+    "nNonZero": 58,
+    "nMeaningful": 58,
+    "dataRangeMinEv": 8,
+    "dataRangeMaxEv": 30000
+  },
   "rows": [
     {
       "energyEv": 8.52195825627734,

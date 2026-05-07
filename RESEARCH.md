@@ -78,10 +78,10 @@ Each level has its own `protocol.md` under `experiments/level-N-<slug>/`.
 
 | Level | Status | Notes |
 |-------|--------|-------|
-| 1 — Cross sections | **In progress.** E1 + E2 passing; E3–E4 protocols only. | Stages 1–2 shipped Born ionization + Emfietzoglou excitation bit-match. |
+| 1 — Cross sections | **In progress.** E1, E2, E3 passing; E4 protocol only. | Stages 1–3 shipped Born ionization + Emfietzoglou excitation + Champion elastic bit-match. |
 | 2 — Track structure | Protocol only. | Replaces ad-hoc `validation/compare.py`. |
 | 3 — Pre-chemistry | Protocol only. | Awaits Geant4 chem6 ntuple ingest. |
-| 4 — Chemistry | Protocol only. | Awaits Tran 2024 reference ingest. |
+| 4 — Chemistry | **In progress.** E10 implemented (IRT vs Karamitros 2011 across 5 energies). E11 (GPU vs IRT) deferred — needs browser-runner infra. | |
 | 5 — DNA damage | Protocol only. | Awaits Friedland 2011 / molecularDNA reference ingest. |
 | 6 — Performance | Protocol only. | Awaits same-machine Geant4 single-thread baseline. |
 

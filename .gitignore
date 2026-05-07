@@ -27,3 +27,6 @@ splat.html.zip
 demo_recording.webp
 final_demo.webp
 
+# Experiment IRT cache — recreatable from dumps/rad_E*_N4096.bin via run_irt.cjs.
+experiments/.cache/
+

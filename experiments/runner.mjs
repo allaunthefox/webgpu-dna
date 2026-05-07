@@ -9,11 +9,13 @@ import { writeArtifact, todayUtcDate } from './lib/artifact.mjs';
 import { runE1 } from './level-1-cross-sections/E1-ion-xs-match.mjs';
 import { runE2 } from './level-1-cross-sections/E2-exc-xs-match.mjs';
 import { runE3 } from './level-1-cross-sections/E3-elastic-xs-match.mjs';
+import { runE10 } from './level-4-chemistry/E10-irt-vs-karamitros.mjs';
 
 const REGISTRY = {
-  E1: { run: runE1, level: 'level-1', id: 'E1-ion-xs-match' },
-  E2: { run: runE2, level: 'level-1', id: 'E2-exc-xs-match' },
-  E3: { run: runE3, level: 'level-1', id: 'E3-elastic-xs-match' },
+  E1:  { run: runE1,  level: 'level-1', id: 'E1-ion-xs-match' },
+  E2:  { run: runE2,  level: 'level-1', id: 'E2-exc-xs-match' },
+  E3:  { run: runE3,  level: 'level-1', id: 'E3-elastic-xs-match' },
+  E10: { run: runE10, level: 'level-4', id: 'E10-irt-vs-karamitros' },
 };
 
 const REPO_ROOT = join(import.meta.dirname, '..');
@@ -36,20 +38,24 @@ async function main() {
     env: result.env,
     status: result.status,
     diagnosis: result.diagnosis,
+    summary: result.summary,
     rows: result.rows,
   });
 
-  // Print summary line — same shape webgpu-q's run-all uses.
+  // Print summary line — bit-match metrics if present, else fall back
+  // to a generic per-experiment format.
   const s = result.summary ?? {};
   const tag = result.status === 'pass' ? '✓ PASS' : result.status === 'noisy' ? '⚠ NOISY' : '✗ FAIL';
-  console.log(
-    `[${id}] ${tag}  rows=${s.nRows ?? result.rows.length}  ` +
-      `peak_ratio=${s.peakRatio?.toFixed(4) ?? '—'}  ` +
-      `median=${s.medianRelErr?.toExponential(2) ?? '—'}  ` +
-      `p90=${s.p90RelErr?.toExponential(2) ?? '—'}  ` +
-      `max=${s.maxRelErrMeaningful?.toExponential(2) ?? '—'}  ` +
-      `→ ${outPath.replace(REPO_ROOT + '/', '')}`,
-  );
+  const headline =
+    s.peakRatio !== undefined
+      ? `rows=${s.nRows ?? result.rows.length}  peak_ratio=${s.peakRatio.toFixed(4)}  ` +
+        `median=${s.medianRelErr.toExponential(2)}  ` +
+        `p90=${s.p90RelErr.toExponential(2)}  max=${s.maxRelErrMeaningful.toExponential(2)}`
+      : s.nEnergies !== undefined
+        ? `energies=${s.nEnergies}  rows=${s.nRows}  failed=${s.nFailedRows ?? 0}  ` +
+          `let_trend=OH:${s.letTrendMonotonic?.OH ? '✓' : '✗'} eaq:${s.letTrendMonotonic?.eaq ? '✓' : '✗'}`
+        : `rows=${result.rows.length}`;
+  console.log(`[${id}] ${tag}  ${headline}  → ${outPath.replace(REPO_ROOT + '/', '')}`);
   if (result.diagnosis) console.log(`  diagnosis: ${result.diagnosis}`);
 
   process.exit(result.status === 'pass' ? 0 : 1);

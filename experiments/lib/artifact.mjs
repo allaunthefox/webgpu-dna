@@ -8,12 +8,13 @@
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-export function writeArtifact(outPath, { meta, env, rows, status, diagnosis = null }) {
+export function writeArtifact(outPath, { meta, env, rows, status, diagnosis = null, summary = null }) {
   const artifact = {
     meta,
     env,
     status,
     diagnosis,
+    summary,
     rows,
   };
   mkdirSync(dirname(outPath), { recursive: true });
