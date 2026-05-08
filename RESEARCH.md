@@ -78,6 +78,7 @@ Each level has its own `protocol.md` under `experiments/level-N-<slug>/`.
 
 | Level | Status | Notes |
 |-------|--------|-------|
+| 0 — Env / infra | **In progress.** B0 (browser-runner sanity) passing. | Playwright + headless Chromium + WebGPU pipeline functional; B1 (webgpu-dna harness liveness) deferred. |
 | 1 — Cross sections | **Complete.** E1, E2, E3, E4, E4b all passing. | Born ionization + Emfietzoglou excitation + Champion elastic + Sanche vibrational total + per-mode fractions bit-match. |
 | 2 — Track structure | **In progress.** E5 (CSDA + E-cons + ions @ 10 keV) and E6 (MFP across 6 energy bins) implemented and passing. E7/E8 deferred — need per-energy WebGPU dumps. | Replaces ad-hoc `validation/compare.py` with structured `validation/webgpu-results.json` + research artifacts. |
 | 3 — Pre-chemistry | Protocol only. | Awaits Geant4 chem6 ntuple ingest. |

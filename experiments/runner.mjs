@@ -15,16 +15,25 @@ import { runE5 } from './level-2-track-structure/E5-csda-vs-g4-ntuple.mjs';
 import { runE6 } from './level-2-track-structure/E6-mfp-vs-g4-ntuple.mjs';
 import { runE6b } from './level-2-track-structure/E6b-sigma-per-process-vs-g4.mjs';
 import { runE10 } from './level-4-chemistry/E10-irt-vs-karamitros.mjs';
+import { runB0 } from './level-0-env/B0-browser-env.mjs';
 
 const REGISTRY = {
+  // Level 0 — env / infrastructure sanity
+  B0:  { run: runB0,  level: 'level-0', id: 'B0-browser-env' },
+
+  // Level 1 — cross-section bit-match
   E1:  { run: runE1,  level: 'level-1', id: 'E1-ion-xs-match' },
   E2:  { run: runE2,  level: 'level-1', id: 'E2-exc-xs-match' },
   E3:  { run: runE3,  level: 'level-1', id: 'E3-elastic-xs-match' },
   E4:  { run: runE4,  level: 'level-1', id: 'E4-vib-xs-match' },
   E4b: { run: runE4b, level: 'level-1', id: 'E4b-vib-mode-fractions' },
+
+  // Level 2 — track structure
   E5:  { run: runE5,  level: 'level-2', id: 'E5-csda-vs-g4-ntuple' },
   E6:  { run: runE6,  level: 'level-2', id: 'E6-mfp-vs-g4-ntuple' },
   E6b: { run: runE6b, level: 'level-2', id: 'E6b-sigma-per-process-vs-g4' },
+
+  // Level 4 — chemistry
   E10: { run: runE10, level: 'level-4', id: 'E10-irt-vs-karamitros' },
 };
 
