@@ -14,7 +14,8 @@
     "test:watch": "vitest",
     "check": "npm run typecheck && npm run lint && npm run test",
     "convert": "python3 tools/convert_g4data.py",
-    "experiments": "node experiments/runner.mjs"
+    "experiments": "node experiments/runner.mjs",
+    "check-browser": "node experiments/tools/check-browser.mjs"
   },
   "license": "MIT",
   "devDependencies": {
@@ -23,6 +24,7 @@
     "@typescript-eslint/parser": "^8.58.1",
     "@webgpu/types": "^0.1.69",
     "eslint": "^10.2.0",
+    "playwright": "^1.59.1",
     "typescript": "^6.0.2",
     "vite": "^8.0.8",
     "vitest": "^4.1.4"
