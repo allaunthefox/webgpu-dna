@@ -16,10 +16,12 @@ import { runE6 } from './level-2-track-structure/E6-mfp-vs-g4-ntuple.mjs';
 import { runE6b } from './level-2-track-structure/E6b-sigma-per-process-vs-g4.mjs';
 import { runE10 } from './level-4-chemistry/E10-irt-vs-karamitros.mjs';
 import { runB0 } from './level-0-env/B0-browser-env.mjs';
+import { runB1 } from './level-0-env/B1-harness-liveness.mjs';
 
 const REGISTRY = {
   // Level 0 — env / infrastructure sanity
   B0:  { run: runB0,  level: 'level-0', id: 'B0-browser-env' },
+  B1:  { run: runB1,  level: 'level-0', id: 'B1-harness-liveness' },
 
   // Level 1 — cross-section bit-match
   E1:  { run: runE1,  level: 'level-1', id: 'E1-ion-xs-match' },
