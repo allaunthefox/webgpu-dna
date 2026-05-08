@@ -5,6 +5,105 @@ format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project follows [Semantic Versioning](https://semver.org/) starting
 from `0.1.0`.
 
+## [0.2.0] — 2026-05-08
+
+Research-grade protocol release. Promotes the validation prose from
+"we claim X" to "X.json says X with these specific bars and findings"
+by adopting the same falsifiable-experiment discipline as the sibling
+`webgpu-q` project.
+
+### Added — research protocol
+
+- **`RESEARCH.md`** — thesis sentence, reproducibility / timing /
+  correctness / honest-negatives standards, six-level experiment table.
+- **`experiments/` tree** — 12 falsifiable experiments shipping JSON
+  artifacts under `experiments/results/<date>/level-N/`:
+  - **L0 env** (2): B0 browser env, B1 harness liveness.
+  - **L1 cross sections** (5, all passing): E1 Born ionization,
+    E2 Emfietzoglou excitation, E3 Champion elastic (retroactively
+    catches the historical 334× scale-factor regression in
+    `memory/cross_section_fix.md`), E4 Sanche vibrational total,
+    E4b Sanche per-mode XVMF fractions.
+  - **L2 track structure** (3): E5 CSDA + E-cons + ions vs Geant4
+    ntuple, E6 MFP across 6 energy bins, E6b per-process σ
+    decomposition.
+  - **L4 chemistry** (1): E10 IRT G-values vs Karamitros 2011 across
+    5 primary energies.
+  - **L3, L5, L6** — protocol-only (deferred).
+- **`experiments/lib/`** — shared helpers (`xs-bitmatch.mjs` for L1,
+  `run-irt.mjs` for L4 with mtime-keyed cache, `browser.mjs` +
+  `env-browser.mjs` + `dev-server.mjs` for browser-runner experiments,
+  `artifact.mjs` for the `meta / env / status / diagnosis / summary /
+  rows` JSON shape, `env.mjs` for Node-side env capture, `seeds.mjs`
+  for named deterministic seeds).
+- **`npm run experiments -- <id>`** — CLI dispatcher; `<id>` ∈
+  {B0, B1, E1, E2, E3, E4, E4b, E5, E6, E6b, E10}.
+- **`npm run check-browser`** — quick Playwright + headless Chromium
+  + WebGPU pipeline sanity check.
+
+### Added — browser-runner infrastructure
+
+- **Playwright + headless Chromium** (`devDependency`) with the
+  `--headless=new` + `--enable-unsafe-webgpu` + `--enable-features=Vulkan`
+  flag set that exposes `navigator.gpu` in a secure context. Vite
+  dev-server lifecycle wrapper (`dev-server.mjs`) for browser-driven
+  physics experiments. B1 proves the full stack live: vite + harness
+  HTML + main.ts + `ensurePipelines` + Phase A WGSL dispatch + table
+  render → captured Node-side as a JSON artifact.
+
+### Research findings now in the ledger
+
+The protocol surfaced four substantive findings that were not visible
+from the prose-only validation:
+
+1. **G(e⁻aq) is non-monotonic between 1 and 3 keV** (1.156 → 1.027 →
+   1.149). At N=4096 this is ~40σ outside MC noise — a real V-shape
+   attributable to track-end / spur-structure physics. The naive
+   "monotonic LET deficit" framing applies cleanly only to E ≥ 5 keV.
+2. **The 0.985× CSDA ratio is 4.61σ statistically significant.** The
+   1.5% systematic underestimate is a real physics gap, not random
+   scatter at N=4096. Tightening to a 2σ pass bar when the physics
+   improves is the explicit follow-up.
+3. **MFP is consistently 4-11% lower than Geant4 across all bins.**
+   Quantifies the README's "MFP within 2-14%" prose.
+4. **σ_ion is 5.6% high and σ_el is 6.3% high vs Geant4.** Previously
+   undocumented. E6b decomposes the MFP shortfall as ~47% from
+   σ_ion overestimate, ~31% from σ_el overestimate, ~22% from the
+   intentional Emfietzoglou-vs-Born σ_exc inflation.
+
+### Added — auto-memory entries
+
+- `geant4_versions.md` — current Geant4 11.4.1 / G4EMLOW 8.8 ecosystem
+  state (refresh ~6 months).
+- `geant4_dna_references.md` — landmark cross-validation papers
+  (Karamitros 2011, Tran 2024, Friedland 2011, molecularDNA,
+  dsbandrepair) and the chemistry constructor taxonomy
+  (option1 SBS vs option3 IRT clarification).
+
+### Site copy fix
+
+- `index.html`: replaced "chemistry within textbook tolerances" with
+  the explicit `0.6×–1.2× Karamitros 2011 (LET-dependent)` range, and
+  "G(H) / G(H₂) match Karamitros within 15%" with per-species ratios
+  (G(H₂) ≈ 1.1×, G(H) ≈ 1.2×, plus the LET caveat for G(OH) / G(eaq)).
+
+### Test surface
+
+- Same 46 unit tests pass (no physics changes; all additions are
+  research-protocol scaffolding and validation infrastructure).
+- 12 new research-grade experiments exposed via `npm run experiments`.
+
+### Known gaps unchanged from 0.1.0
+
+- GPU-resident chemistry path (`chemBackend: 'gpu'`) still undercounts.
+  E11 (GPU vs IRT formal comparison) is now infrastructure-ready —
+  pending only a programmatic API in `src/app.ts` to drive Phase C
+  on a saved rad_buf without re-running Phase A+B. Deferred to 0.3.x.
+- `data/g4emlow/` is not committed; download from CERN to rebuild
+  cross sections.
+
+[0.2.0]: https://github.com/abgnydn/webgpu-dna/releases/tag/v0.2.0
+
 ## [0.1.0] — 2026-05-04
 
 First public release. The repo has been on GitHub for a while via
