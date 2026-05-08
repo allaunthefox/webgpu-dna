@@ -35,17 +35,18 @@ One GPU thread per primary electron, full particle history in a single fused com
 
 ### Research-grade validation ledger
 
-8 falsifiable experiments shipped as committed JSON artifacts under [`experiments/results/`](./experiments/results/). See [RESEARCH.md](./RESEARCH.md) for the protocol; per-experiment specs under [`experiments/level-N-*/protocol.md`](./experiments/).
+12 falsifiable experiments shipped as committed JSON artifacts under [`experiments/results/`](./experiments/results/). See [RESEARCH.md](./RESEARCH.md) for the protocol; per-experiment specs under [`experiments/level-N-*/protocol.md`](./experiments/).
 
 | Level | ID | Status | Headline |
 |------:|:---|:-------|:---------|
-| 1 | E1–E4b | ✓ | All four cross-section families bit-matched against G4EMLOW source data |
+| 0 | B0, B1 | ✓ | Browser-runner infrastructure: Playwright + headless Chromium WebGPU; B1 drives the live harness end-to-end (E=100 eV, CSDA=15.7 nm in 4.4s) |
+| 1 | E1–E4b | ✓ | All four cross-section families bit-matched against G4EMLOW source data (5 experiments) |
 | 2 | E5    | ✓ | CSDA + E-cons + ions @ 10 keV vs Geant4 ntuple — surfaces 0.985× as **4.61σ statistically significant** |
 | 2 | E6    | ✓ | MFP across 6 energy bins — confirms "MFP within 2-14%" prose as -3.5% to -10.5% across [100 eV, 10 keV] |
 | 2 | E6b   | ✓ | Per-process σ decomposition — surfaces **σ_ion 5.6% high and σ_el 6.3% high** vs Geant4 (previously undocumented) |
 | 4 | E10   | ✓ | IRT G-values vs Karamitros 2011 across 5 primary energies — surfaces **G(eaq) V-shape at 1-3 keV** (~40σ outside MC noise — track-end physics) |
 
-Run any experiment via `npm run experiments -- <id>` (e.g. `E1`, `E10`).
+Run any experiment via `npm run experiments -- <id>` (e.g. `E1`, `E10`, `B1`).
 
 ## Quick start
 
