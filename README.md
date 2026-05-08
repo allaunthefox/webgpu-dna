@@ -42,6 +42,7 @@ One GPU thread per primary electron, full particle history in a single fused com
 | 1 | E1–E4b | ✓ | All four cross-section families bit-matched against G4EMLOW source data |
 | 2 | E5    | ✓ | CSDA + E-cons + ions @ 10 keV vs Geant4 ntuple — surfaces 0.985× as **4.61σ statistically significant** |
 | 2 | E6    | ✓ | MFP across 6 energy bins — confirms "MFP within 2-14%" prose as -3.5% to -10.5% across [100 eV, 10 keV] |
+| 2 | E6b   | ✓ | Per-process σ decomposition — surfaces **σ_ion 5.6% high and σ_el 6.3% high** vs Geant4 (previously undocumented) |
 | 4 | E10   | ✓ | IRT G-values vs Karamitros 2011 across 5 primary energies — surfaces **G(eaq) V-shape at 1-3 keV** (~40σ outside MC noise — track-end physics) |
 
 Run any experiment via `npm run experiments -- <id>` (e.g. `E1`, `E10`).

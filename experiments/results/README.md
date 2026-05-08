@@ -24,4 +24,5 @@ alongside passing ones. Each artifact carries:
 | 2026-05-07 | L1 | E4b-vib-mode-fractions | pass | 342 (energy × mode) pairs vs raw σ_mode/σ_total; max sum dev 4e-8 (closes L1 fully) |
 | 2026-05-07 | L2 | E5-csda-vs-g4-ntuple  | pass | CSDA 2714.4 vs 2756.5 (0.985×, 4.61σ); E-cons 100% vs 100% — surfaces 1.5% CSDA bias as statistically significant |
 | 2026-05-07 | L2 | E6-mfp-vs-g4-ntuple   | pass | 6 energy bins (100 eV → 10 keV), MFP_total ratios [0.895, 0.965] (median 0.926), confirms README "MFP within 2-14%" claim numerically |
+| 2026-05-08 | L2 | E6b-sigma-per-process-vs-g4 | pass | Per-process σ decomposition: σ_ion mean 1.056 (5.6% high), σ_el mean 1.063 (6.3% high), σ_exc mean 2.57 (Emfietzoglou-vs-Born, intentional) — **decomposes the E6 -7% MFP into per-process contributions** |
 | 2026-05-07 | L4 | E10-irt-vs-karamitros | pass | 5 energies (1/3/5/10/20 keV) × 5 species vs Karamitros 2011 — surfaced G(eaq) V-shape at 1-3 keV (real track-end effect, ~40σ outside MC noise) |

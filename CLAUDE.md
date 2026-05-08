@@ -93,9 +93,11 @@ per-level `protocol.md` files for hypotheses + pass bars.
   scale-factor catcher per memory/cross_section_fix.md), E4 Sanche
   vibrational total, E4b Sanche per-mode XVMF fractions. All five WGSL
   cross-section tables bit-match their G4EMLOW source data.
-- **L2 — Track structure (2 of 4 passing).** E5 CSDA + E-cons + ions
+- **L2 — Track structure (3 of 4 passing).** E5 CSDA + E-cons + ions
   @ 10 keV vs Geant4 ntuple. E6 MFP across 6 energy bins
-  (-3.5% to -10.5% deviation, all within 25% bar).
+  (-3.5% to -10.5% deviation, all within 25% bar). E6b per-process
+  σ decomposition — back out σ_ion / σ_el / σ_exc from the ntuple's
+  per-process counts and compare to WGSL XI / XL / XC.
 - **L4 — Chemistry (1 of 2 passing).** E10 IRT G-values vs Karamitros
   2011 across 5 primary energies (1/3/5/10/20 keV). E11 GPU vs IRT
   backend deferred — needs browser runner infrastructure.
@@ -115,9 +117,15 @@ be visible without the protocol):
    this documented bias; tightening to 2σ when the physics is improved
    is the explicit follow-up.
 3. **MFP is consistently 4-11% lower than Geant4 across all bins.**
-   Confirms README's "MFP within 2-14%" prose numerically. Likely
-   driven by the Emfietzoglou-vs-Born excitation choice (Emfietzoglou
-   σ_exc is 2.4× larger).
+   Confirms README's "MFP within 2-14%" prose numerically.
+4. **σ_ion is 5.6% high and σ_el is 6.3% high vs Geant4** (E6b
+   decomposition). Previously undocumented — only the σ_exc inflation
+   (Emfietzoglou-vs-Born) was explained. Per E6b, the MFP shortfall
+   decomposes as ~47% from σ_ion overestimate, ~31% from σ_el
+   overestimate, ~22% from the (intentional) σ_exc inflation.
+   The σ_exc ratio observed (2.46-2.66×, mean 2.57×) is slightly
+   higher than the "2.2-2.4× larger than Born" documented in
+   `tools/convert_g4data.py` — worth re-deriving when convenient.
 
 Run any experiment via `npm run experiments -- <id>` (e.g. `E10`).
 

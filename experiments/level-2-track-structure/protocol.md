@@ -62,13 +62,33 @@ seeds, mean ± SEM, and explicit pass bars.
 - **Pass bar:** `|MFP_wgsl / MFP_g4_mean − 1| < 0.25` per bin.
 - **Surfaced finding:** WebGPU MFP is consistently 4-11% lower than
   Geant4 across all bins (ratio < 1 in all 6 cells). README's "MFP
-  within 2-14%" is now quantified as -3.5% to -10.5%. The systematic
-  bias is consistent with WebGPU's Emfietzoglou excitation choice
-  (2.4× larger σ_exc than Geant4's Born, though excitation is a small
-  fraction of σ_total).
+  within 2-14%" is now quantified as -3.5% to -10.5%.
 - **Constants:** n_water = 33.43 nm⁻³ (ρ=1.0 g/cm³, M=18.015 g/mol).
 - **E_mid:** geometric midpoint of each bin (best approximation for
   log-log smooth σ).
+
+### E6b — Per-process σ decomposition vs Geant4 ntuple
+- **Status:** **Implemented; passing.** First artifact:
+  `experiments/results/2026-05-08/level-2/E6b-sigma-per-process-vs-g4.json`.
+- **Hypothesis:** Per-process σ ratios (WGSL/Geant4) at each bin
+  midpoint sit in their respective bands: σ_ion ∈ [0.85, 1.15];
+  σ_el ∈ [0.85, 1.15]; σ_exc ∈ [1.8, 3.2] (Emfietzoglou-vs-Born,
+  intentional).
+- **Trick:** in a Poisson tracker the count fraction per process
+  equals σ_proc / σ_total. The g4_mfp.csv "count" column gives
+  per-process step counts per bin → fractional probabilities →
+  back out σ_proc from σ_total (E6's MFP-derived total).
+- **Surfaced finding (the 4th research-grade discovery):**
+  σ_ion is 5.6% high on average (range 1.7-10.4%), σ_el is 6.3% high
+  (range 2.5-10.0%) vs Geant4. Previously undocumented — only the
+  σ_exc inflation (Emfietzoglou) had been explained. The MFP
+  shortfall (-7% in E6) decomposes as: ~47% from σ_ion overestimate,
+  ~31% from σ_el overestimate, ~22% from σ_exc (intentional
+  Emfietzoglou inflation).
+- **Note on σ_exc ratio:** observed 2.46-2.66× (mean 2.57×) is
+  slightly above CLAUDE.md / convert_g4data.py's documented "2.2-2.4×
+  larger than Born". Worth re-deriving with the current G4EMLOW 8.8
+  data when convenient.
 
 ### E7 — Ions per primary vs Geant4 ntuple
 - **Hypothesis:** Total ionizations per primary at 10 keV agrees with
